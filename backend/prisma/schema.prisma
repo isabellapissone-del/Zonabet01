@@ -1,0 +1,269 @@
+// Prisma Schema for ZONABET Sportsbook Engine
+// Database: PostgreSQL with Decimal financial consistency
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum TransactionType {
+  DEPOSIT
+  BET
+  WIN
+  REFUND
+  ADJUSTMENT
+}
+
+enum TransactionStatus {
+  COMPLETED
+  FAILED
+}
+
+enum MatchStatus {
+  DRAFT
+  OPEN
+  SUSPENDED
+  CLOSED
+  FINISHED
+  CANCELLED
+}
+
+enum MarketStatus {
+  OPEN
+  SUSPENDED
+  CLOSED
+  SETTLED
+}
+
+enum SelectionStatus {
+  ACTIVE
+  SETTLED_WIN
+  SETTLED_LOST
+  VOID
+}
+
+enum BetType {
+  SINGLE
+  MULTIPLE
+}
+
+enum BetStatus {
+  PENDING
+  WON
+  LOST
+  VOID
+}
+
+model User {
+  id           String              @id @default(uuid())
+  name         String
+  email        String              @unique
+  phone        String
+  passwordHash String
+  role         UserRole            @default(USER)
+  isBlocked    Boolean             @default(false)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  wallet       Wallet?
+  transactions WalletTransaction[]
+  bets         Bet[]
+  sessions     Session[]
+  auditLogs    AuditLog[]          @relation("AdminAuditLogs")
+
+  @@index([email])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Wallet {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance       Decimal  @default(0.00) @db.Decimal(12, 2)
+  lockedBalance Decimal  @default(0.00) @db.Decimal(12, 2)
+  updatedAt     DateTime @updatedAt
+
+  transactions  WalletTransaction[]
+}
+
+model WalletTransaction {
+  id              String            @id @default(uuid())
+  walletId        String
+  wallet          Wallet            @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            TransactionType
+  amount          Decimal           @db.Decimal(12, 2)
+  previousBalance Decimal           @db.Decimal(12, 2)
+  nextBalance     Decimal           @db.Decimal(12, 2)
+  reference       String            // Bet ID, adjustment reference, or deposit ID
+  description     String
+  status          TransactionStatus @default(COMPLETED)
+  createdAt       DateTime          @default(now())
+
+  @@index([userId])
+  @@index([walletId])
+  @@index([reference])
+}
+
+model Competition {
+  id        String   @id @default(uuid())
+  name      String
+  country   String
+  code      String   @unique
+  createdAt DateTime @default(now())
+  matches   Match[]
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  shortName   String
+  homeMatches Match[]  @relation("HomeTeam")
+  awayMatches Match[]  @relation("AwayTeam")
+  createdAt   DateTime @default(now())
+}
+
+model Match {
+  id              String       @id @default(uuid())
+  competitionId   String
+  competition     Competition  @relation(fields: [competitionId], references: [id])
+  homeTeamId      String
+  homeTeam        Team         @relation("HomeTeam", fields: [homeTeamId], references: [id])
+  awayTeamId      String
+  awayTeam        Team         @relation("AwayTeam", fields: [awayTeamId], references: [id])
+  kickoffDate     String       // YYYY-MM-DD
+  kickoffTime     String       // HH:mm
+  status          MatchStatus  @default(DRAFT)
+  homeScore       Int?
+  awayScore       Int?
+  description     String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  markets         Market[]
+  betItems        BetItem[]
+  settlement      Settlement?
+
+  @@index([status])
+  @@index([competitionId])
+}
+
+model Market {
+  id         String       @id @default(uuid())
+  matchId    String
+  match      Match        @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  type       String       @default("1X2")
+  name       String       @default("Resultado Final (1X2)")
+  status     MarketStatus @default(OPEN)
+  createdAt  DateTime     @default(now())
+
+  selections Selection[]
+  betItems   BetItem[]
+
+  @@index([matchId])
+}
+
+model Selection {
+  id        String          @id @default(uuid())
+  marketId  String
+  market    Market          @relation(fields: [marketId], references: [id], onDelete: Cascade)
+  outcome   String          // "1", "X", "2"
+  label     String
+  odds      Decimal         @db.Decimal(6, 2)
+  status    SelectionStatus @default(ACTIVE)
+
+  betItems  BetItem[]
+
+  @@index([marketId])
+}
+
+model Bet {
+  id              String    @id @default(uuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            BetType   @default(SINGLE)
+  stake           Decimal   @db.Decimal(12, 2)
+  totalOdds       Decimal   @db.Decimal(8, 2)
+  potentialReturn Decimal   @db.Decimal(12, 2)
+  status          BetStatus @default(PENDING)
+  idempotencyKey  String?   @unique
+  settledAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  items           BetItem[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model BetItem {
+  id             String    @id @default(uuid())
+  betId          String
+  bet            Bet       @relation(fields: [betId], references: [id], onDelete: Cascade)
+  matchId        String
+  match          Match     @relation(fields: [matchId], references: [id])
+  marketId       String
+  market         Market    @relation(fields: [marketId], references: [id])
+  selectionId    String
+  selection      Selection @relation(fields: [selectionId], references: [id])
+  outcome        String    // '1' | 'X' | '2'
+  oddsAtBetTime  Decimal   @db.Decimal(6, 2)
+  status         BetStatus @default(PENDING)
+
+  @@index([betId])
+  @@index([matchId])
+}
+
+model Settlement {
+  id             String   @id @default(uuid())
+  matchId        String   @unique
+  match          Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  adminId        String
+  homeScore      Int
+  awayScore      Int
+  winningOutcome String
+  settledBets    Int
+  totalPayout    Decimal  @db.Decimal(12, 2)
+  settledAt      DateTime @default(now())
+
+  @@index([matchId])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     User     @relation("AdminAuditLogs", fields: [adminId], references: [id])
+  action    String
+  entity    String
+  entityId  String
+  oldValue  String?  @db.Text
+  newValue  String?  @db.Text
+  ip        String
+  timestamp DateTime @default(now())
+
+  @@index([adminId])
+  @@index([action])
+  @@index([entity])
+}

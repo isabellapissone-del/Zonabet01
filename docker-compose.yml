@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: zonabet-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zonabet_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zonabet_db_password}
+      POSTGRES_DB: ${POSTGRES_DB:-zonabet_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zonabet_user} -d ${POSTGRES_DB:-zonabet_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: zonabet-backend
+    restart: always
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:-postgresql://zonabet_user:zonabet_db_password@postgres:5432/zonabet_db?schema=public}
+      JWT_SECRET: ${JWT_SECRET:-zonabet_jwt_secret_change_in_production}
+      SUPABASE_URL: ${SUPABASE_URL:-}
+      SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
+      MINIMUM_STAKE: "10"
+      MAXIMUM_STAKE: "50000"
+      MAXIMUM_POTENTIAL_WIN: "1000000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+    driver: local
