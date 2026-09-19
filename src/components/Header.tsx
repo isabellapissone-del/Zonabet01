@@ -455,16 +455,7 @@ export const Header: React.FC<HeaderProps> = ({
                   )}
                 </button>
 
-                <a
-                  id="mobile-drawer-download-btn"
-                  href="/zonabet-projeto-completo.tar.gz"
-                  download="zonabet-projeto-completo.tar.gz"
-                  onClick={() => setMobileMenuOpen(false)}
-                  className="w-full p-3 rounded-xl text-left text-xs font-bold flex items-center gap-3 text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 transition-colors"
-                >
-                  <Download className="w-4 h-4 text-emerald-400" />
-                  <span>Baixar Código do Projeto (.tar.gz)</span>
-                </a>
+
               </div>
             </div>
 

@@ -92,12 +92,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     }
   };
 
-  const quickFillUser = () => {
-    setMode('login');
-    setLoginIdentifier('+258 84 123 4567');
-    setPassword('Apostador123!');
-    setError(null);
-  };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-sm animate-in fade-in">
@@ -349,23 +344,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </button>
         </form>
 
-        {/* Quick Access Bar */}
-        <div className="mt-6 pt-4 border-t border-slate-800 space-y-2">
-          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 text-center">
-            Acesso Rápido de Testes
-          </p>
-          <button
-            type="button"
-            onClick={quickFillUser}
-            className="w-full p-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition-colors flex items-center justify-between"
-          >
-            <div>
-              <span className="block text-xs font-bold text-emerald-400">Apostador: Nelson Tembe</span>
-              <span className="block text-[10px] text-slate-400">+258 84 123 4567 • apostador@exemplo.co.mz</span>
-            </div>
-            <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold">1-Clique</span>
-          </button>
-        </div>
+
 
       </div>
     </div>
