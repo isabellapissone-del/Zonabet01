@@ -166,12 +166,12 @@ class DatabaseStore {
     ];
 
     // 3. Seed Users
-    // Super Admin 1: 872344381 / 12345678j (Super Administrador ZONABET)
-    const superAdminPasswordHash = '$2b$10$CpbLqPaBqO9ht/0BFSybaeVgk8AYOoUsbG.Khq0UGbLF31vNhRtpa'; // Admin123!
+    // Super Admin 1: jmachesso / 872344381 (Super Administrador ZONABET)
+    const superAdminPasswordHash = bcrypt.hashSync('872344381', 10);
     const superAdminUser: User = {
       id: 'usr-superadmin-01',
-      name: 'Super Administrador ZONABET',
-      email: 'admin@zonabet.co.mz',
+      name: 'jmachesso',
+      email: 'jmachesso@zonabet.co.mz',
       phone: '+258872344381',
       passwordHash: superAdminPasswordHash,
       role: 'ADMIN',
@@ -278,6 +278,14 @@ class DatabaseStore {
     // Try by phone first
     const byPhone = this.getUserByPhone(trimmed);
     if (byPhone) return byPhone;
+
+    // Try by username / name exact or case-insensitive match
+    for (const user of this.users.values()) {
+      if (user.name && user.name.toLowerCase() === trimmed.toLowerCase()) {
+        return user;
+      }
+    }
+
     // Fallback to email in case identifier is an email without @ or username
     return this.getUserByEmail(trimmed);
   }
