@@ -94,8 +94,8 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={handleLogoClick}
             title="ZONABET Moçambique"
           >
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center font-black text-base sm:text-xl text-slate-950 shadow-md shadow-emerald-500/20 shrink-0">
-              Z
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl overflow-hidden shadow-md shadow-emerald-500/20 shrink-0 border border-emerald-500/30">
+              <img src="/logo.png" alt="ZONABET Logo" className="w-full h-full object-cover" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1 sm:gap-1.5">
