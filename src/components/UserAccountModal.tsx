@@ -178,11 +178,11 @@ export const UserAccountModal: React.FC<UserAccountModalProps> = ({ defaultTab =
       if (betSearch.trim()) {
         const query = betSearch.toLowerCase();
         const matchesId = bet.id.toLowerCase().includes(query);
-        const matchesMatch = bet.items.some(
+        const matchesMatch = (bet.items || []).some(
           (item) =>
-            item.matchTitle.toLowerCase().includes(query) ||
-            item.competitionName.toLowerCase().includes(query) ||
-            item.selectionLabel.toLowerCase().includes(query)
+            (item.matchTitle || '').toLowerCase().includes(query) ||
+            (item.competitionName || '').toLowerCase().includes(query) ||
+            (item.selectionLabel || item.label || '').toLowerCase().includes(query)
         );
         return matchesId || matchesMatch;
       }

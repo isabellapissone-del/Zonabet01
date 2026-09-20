@@ -148,37 +148,46 @@ export class BetService {
   static async getUserBets(userId: string): Promise<Bet[]> {
     const client = supabaseService.getClient();
     if (client) {
-      const { data, error } = await client
-        .from('bets')
-        .select(`
-          *,
-          bet_items (*)
-        `)
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
-      
-      if (!error && data) {
-        return data.map(b => ({
-          id: b.id,
-          userId: b.user_id,
-          userName: '',
-          userEmail: '',
-          type: b.bet_items.length > 1 ? 'MULTIPLE' : 'SINGLE',
-          stake: Number(b.total_stake),
-          totalOdds: Number(b.total_odds),
-          potentialReturn: Number(b.potential_return),
-          status: b.status,
-          items: b.bet_items.map((i: any) => ({
-            id: i.id,
-            matchId: i.match_id,
-            marketId: i.market_id,
-            selectionId: i.selection_id,
-            oddsAtBetTime: Number(i.odds_at_bet_time),
-            status: i.status
-          })),
-          createdAt: b.created_at,
-          settledAt: b.settled_at
-        }));
+      try {
+        const { data, error } = await client
+          .from('bets')
+          .select(`
+            *,
+            bet_items (*)
+          `)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false });
+        
+        if (!error && data) {
+          return data.map(b => ({
+            id: b.id,
+            userId: b.user_id,
+            userName: '',
+            userEmail: '',
+            type: (b.bet_items || []).length > 1 ? 'MULTIPLE' : 'SINGLE',
+            stake: Number(b.total_stake || 0),
+            totalOdds: Number(b.total_odds || 1),
+            potentialReturn: Number(b.potential_return || 0),
+            status: b.status || 'PENDING',
+            items: (b.bet_items || []).map((i: any) => ({
+              id: i.id || '',
+              matchId: i.match_id || '',
+              matchTitle: i.match_title || 'Partida',
+              competitionName: i.competition_name || 'Moçambola',
+              marketId: i.market_id || '',
+              marketName: i.market_name || 'Resultado 1X2',
+              selectionId: i.selection_id || '',
+              outcome: i.outcome || '1',
+              label: i.label || '',
+              oddsAtBetTime: Number(i.odds_at_bet_time || 1),
+              status: i.status || 'PENDING'
+            })),
+            createdAt: b.created_at,
+            settledAt: b.settled_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[BetService] Supabase getUserBets fallback to local memory:', err);
       }
     }
     return Array.from(db.bets.values())
@@ -189,38 +198,47 @@ export class BetService {
   static async getAllBets(): Promise<Bet[]> {
     const client = supabaseService.getClient();
     if (client) {
-      const { data, error } = await client
-        .from('bets')
-        .select(`
-          *,
-          profiles (name, phone),
-          bet_items (*)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      
-      if (!error && data) {
-        return data.map(b => ({
-          id: b.id,
-          userId: b.user_id,
-          userName: b.profiles?.name || 'Utilizador',
-          userEmail: b.profiles?.phone || '',
-          type: b.bet_items.length > 1 ? 'MULTIPLE' : 'SINGLE',
-          stake: Number(b.total_stake),
-          totalOdds: Number(b.total_odds),
-          potentialReturn: Number(b.potential_return),
-          status: b.status,
-          items: b.bet_items.map((i: any) => ({
-            id: i.id,
-            matchId: i.match_id,
-            marketId: i.market_id,
-            selectionId: i.selection_id,
-            oddsAtBetTime: Number(i.odds_at_bet_time),
-            status: i.status
-          })),
-          createdAt: b.created_at,
-          settledAt: b.settled_at
-        }));
+      try {
+        const { data, error } = await client
+          .from('bets')
+          .select(`
+            *,
+            profiles (name, phone),
+            bet_items (*)
+          `)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        
+        if (!error && data) {
+          return data.map(b => ({
+            id: b.id,
+            userId: b.user_id,
+            userName: b.profiles?.name || 'Utilizador',
+            userEmail: b.profiles?.phone || '',
+            type: (b.bet_items || []).length > 1 ? 'MULTIPLE' : 'SINGLE',
+            stake: Number(b.total_stake || 0),
+            totalOdds: Number(b.total_odds || 1),
+            potentialReturn: Number(b.potential_return || 0),
+            status: b.status || 'PENDING',
+            items: (b.bet_items || []).map((i: any) => ({
+              id: i.id || '',
+              matchId: i.match_id || '',
+              matchTitle: i.match_title || 'Partida',
+              competitionName: i.competition_name || 'Moçambola',
+              marketId: i.market_id || '',
+              marketName: i.market_name || 'Resultado 1X2',
+              selectionId: i.selection_id || '',
+              outcome: i.outcome || '1',
+              label: i.label || '',
+              oddsAtBetTime: Number(i.odds_at_bet_time || 1),
+              status: i.status || 'PENDING'
+            })),
+            createdAt: b.created_at,
+            settledAt: b.settled_at
+          }));
+        }
+      } catch (err) {
+        console.warn('[BetService] Supabase getAllBets fallback to local memory:', err);
       }
     }
     return Array.from(db.bets.values()).reverse();
