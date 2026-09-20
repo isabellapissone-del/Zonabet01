@@ -448,12 +448,34 @@ export class MatchService {
       '5-0', '0-5', '5-1', '1-5', '5-2', '2-5', '5-3', '3-5', '5-4', '4-5', '5-5'
     ];
 
-    return scoreOptions.map((score, idx) => ({
-      id: `${baseId}-${idx}`,
-      outcome: score,
-      label: score,
-      odds: 0, // Odds manuais: o administrador define no painel administrativo
-      status: 'ACTIVE'
-    }));
+    // Lógica robusta de cálculo automático de odds baseada na proximidade do placar
+    return scoreOptions.map((score, idx) => {
+      const [hgStr, agStr] = score.split('-');
+      const hg = parseInt(hgStr, 10);
+      const ag = parseInt(agStr, 10);
+      const totalGoals = hg + ag;
+      const diff = Math.abs(hg - ag);
+
+      // Cálculo algorítmico realista de probabilidades e odds decimais
+      let baseOdd = 6.5 + (totalGoals * 2.2) + (diff * 1.8);
+      if (score === '0-0') baseOdd = 8.5;
+      if (score === '1-1') baseOdd = 5.8;
+      if (score === '1-0' || score === '0-1') baseOdd = 6.8;
+      if (score === '2-1' || score === '1-2') baseOdd = 8.2;
+      if (score === '2-0' || score === '0-2') baseOdd = 9.5;
+      if (score === '2-2') baseOdd = 11.0;
+      if (totalGoals >= 4) baseOdd = 15.0 + (totalGoals * 4.5);
+
+      // Arredondar para 2 casas decimais e aplicar limites de segurança (min 1.05, max 100.00)
+      let calculatedOdds = Math.max(1.05, Math.min(100.0, Math.round(baseOdd * 100) / 100));
+
+      return {
+        id: `${baseId}-${idx}`,
+        outcome: score,
+        label: score,
+        odds: calculatedOdds,
+        status: 'ACTIVE'
+      };
+    });
   }
 }
