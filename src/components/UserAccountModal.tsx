@@ -182,7 +182,7 @@ export const UserAccountModal: React.FC<UserAccountModalProps> = ({ defaultTab =
           (item) =>
             (item.matchTitle || '').toLowerCase().includes(query) ||
             (item.competitionName || '').toLowerCase().includes(query) ||
-            (item.selectionLabel || item.label || '').toLowerCase().includes(query)
+            (item.selectionLabel || item.selection || '').toLowerCase().includes(query)
         );
         return matchesId || matchesMatch;
       }

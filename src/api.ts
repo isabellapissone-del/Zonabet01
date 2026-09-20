@@ -138,6 +138,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  recalculateCorrectScoreOdds: (matchId: string) =>
+    request<{ message: string }>(`/admin/matches/${matchId}/recalculate-correct-score`, { method: 'POST' }),
   getUsers: () => request<{ users: any[] }>('/admin/users'),
   adminCreateUser: (body: {
     name: string;

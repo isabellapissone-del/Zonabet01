@@ -226,14 +226,14 @@ export class MatchService {
     };
     match.markets.push(mainMarket);
 
-    // Create Correct Score Market
+    // Create Correct Score Market com cálculo automático e inteligente de odds
     const correctScoreMarket: Market = {
       id: `mk-${Date.now()}-cs`,
       name: 'Resultado Correto',
       type: 'CORRECT_SCORE',
       status: 'OPEN',
       maxExposure: 50000,
-      selections: this.generateDefaultCorrectScores(homeTeam, awayTeam),
+      selections: this.generateDefaultCorrectScores(homeTeam, awayTeam, odds),
     };
     match.markets.push(correctScoreMarket);
 
@@ -330,6 +330,27 @@ export class MatchService {
     }
 
     db.matches.set(match.id, match);
+
+    // Auto-update Correct Score market selections if it exists
+    const csMarket = match.markets.find((m) => m.type === 'CORRECT_SCORE');
+    if (csMarket) {
+      const newSelections = this.generateDefaultCorrectScores(match.homeTeam, match.awayTeam, params.odds);
+      
+      // Map new odds to existing selections by outcome
+      for (const sel of csMarket.selections) {
+        const matchingNew = newSelections.find(ns => ns.outcome === sel.outcome);
+        if (matchingNew) {
+          sel.odds = matchingNew.odds;
+          if (client) {
+            await client
+              .from('selections')
+              .update({ odds: sel.odds })
+              .eq('id', sel.id);
+          }
+        }
+      }
+    }
+
     AuditService.log(params.adminId, params.adminEmail, 'UPDATE_ODDS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
   }
@@ -439,7 +460,11 @@ export class MatchService {
     return market;
   }
 
-  private static generateDefaultCorrectScores(home: string, away: string): Selection[] {
+  private static generateDefaultCorrectScores(
+    home: string,
+    away: string,
+    matchOdds?: { home: number; draw: number; away: number }
+  ): Selection[] {
     const baseId = `s-cs-${Date.now()}`;
     const scoreOptions = [
       '0-0', '1-0', '0-1', '1-1', '2-0', '0-2', '2-1', '1-2', '2-2',
@@ -448,7 +473,10 @@ export class MatchService {
       '5-0', '0-5', '5-1', '1-5', '5-2', '2-5', '5-3', '3-5', '5-4', '4-5', '5-5'
     ];
 
-    // Lógica robusta de cálculo automático de odds baseada na proximidade do placar
+    const hOdd = matchOdds?.home && matchOdds.home > 1.0 ? matchOdds.home : 2.10;
+    const dOdd = matchOdds?.draw && matchOdds.draw > 1.0 ? matchOdds.draw : 3.10;
+    const aOdd = matchOdds?.away && matchOdds.away > 1.0 ? matchOdds.away : 3.40;
+
     return scoreOptions.map((score, idx) => {
       const [hgStr, agStr] = score.split('-');
       const hg = parseInt(hgStr, 10);
@@ -456,26 +484,107 @@ export class MatchService {
       const totalGoals = hg + ag;
       const diff = Math.abs(hg - ag);
 
-      // Cálculo algorítmico realista de probabilidades e odds decimais
-      let baseOdd = 6.5 + (totalGoals * 2.2) + (diff * 1.8);
-      if (score === '0-0') baseOdd = 8.5;
-      if (score === '1-1') baseOdd = 5.8;
-      if (score === '1-0' || score === '0-1') baseOdd = 6.8;
-      if (score === '2-1' || score === '1-2') baseOdd = 8.2;
-      if (score === '2-0' || score === '0-2') baseOdd = 9.5;
-      if (score === '2-2') baseOdd = 11.0;
-      if (totalGoals >= 4) baseOdd = 15.0 + (totalGoals * 4.5);
+      let calculatedOdds: number;
 
-      // Arredondar para 2 casas decimais e aplicar limites de segurança (min 1.05, max 100.00)
-      let calculatedOdds = Math.max(1.05, Math.min(100.0, Math.round(baseOdd * 100) / 100));
+      if (hg > ag) {
+        // Vitória Casa
+        const factor = (hOdd / 2.0);
+        if (score === '1-0') calculatedOdds = 5.2 * factor + 1.2;
+        else if (score === '2-0') calculatedOdds = 7.5 * factor + 1.5;
+        else if (score === '2-1') calculatedOdds = 7.0 * factor + 1.2;
+        else if (score === '3-0') calculatedOdds = 12.0 * factor + 2.0;
+        else if (score === '3-1') calculatedOdds = 13.0 * factor + 2.0;
+        else if (score === '3-2') calculatedOdds = 18.0 * factor + 3.0;
+        else if (score === '4-0') calculatedOdds = 22.0 * factor + 4.0;
+        else if (score === '4-1') calculatedOdds = 24.0 * factor + 4.0;
+        else if (score === '4-2') calculatedOdds = 30.0 * factor + 5.0;
+        else if (score === '4-3') calculatedOdds = 45.0 * factor + 6.0;
+        else calculatedOdds = 25.0 + (totalGoals * 5.5) + (diff * 3.0) * factor;
+      } else if (ag > hg) {
+        // Vitória Visitante
+        const factor = (aOdd / 2.0);
+        if (score === '0-1') calculatedOdds = 5.6 * factor + 1.2;
+        else if (score === '0-2') calculatedOdds = 8.2 * factor + 1.5;
+        else if (score === '1-2') calculatedOdds = 7.8 * factor + 1.2;
+        else if (score === '0-3') calculatedOdds = 14.0 * factor + 2.0;
+        else if (score === '1-3') calculatedOdds = 15.0 * factor + 2.0;
+        else if (score === '2-3') calculatedOdds = 20.0 * factor + 3.0;
+        else if (score === '0-4') calculatedOdds = 26.0 * factor + 4.0;
+        else if (score === '1-4') calculatedOdds = 28.0 * factor + 4.0;
+        else if (score === '2-4') calculatedOdds = 35.0 * factor + 5.0;
+        else if (score === '3-4') calculatedOdds = 50.0 * factor + 6.0;
+        else calculatedOdds = 28.0 + (totalGoals * 6.0) + (diff * 3.5) * factor;
+      } else {
+        // Empate
+        const factor = (dOdd / 3.0);
+        if (score === '0-0') calculatedOdds = 7.5 * factor;
+        else if (score === '1-1') calculatedOdds = 5.2 * factor;
+        else if (score === '2-2') calculatedOdds = 11.5 * factor;
+        else if (score === '3-3') calculatedOdds = 28.0 * factor;
+        else if (score === '4-4') calculatedOdds = 60.0 * factor;
+        else calculatedOdds = 80.0 * factor;
+      }
+
+      // Arredondar para 2 casas decimais e manter limites saudáveis (mínimo 1.20, máximo 120.00)
+      const finalOdd = Math.max(1.20, Math.min(120.0, Math.round(calculatedOdds * 100) / 100));
 
       return {
         id: `${baseId}-${idx}`,
         outcome: score,
         label: score,
-        odds: calculatedOdds,
+        odds: finalOdd,
         status: 'ACTIVE'
       };
     });
+  }
+
+  static async recalculateCorrectScoreOdds(matchId: string): Promise<boolean> {
+    const client = supabaseService.getClient();
+    if (!client) return false;
+
+    // 1. Fetch match with markets
+    const { data: match, error } = await client
+      .from('matches')
+      .select('*')
+      .eq('id', matchId)
+      .single();
+
+    if (error || !match) return false;
+
+    const markets = match.markets || [];
+
+    // 2. Find 1X2 odds
+    const mainMarket = markets.find((m: any) => m.type === '1X2');
+    if (!mainMarket) return false;
+
+    const hOdd = mainMarket.selections.find((s: any) => s.outcome === '1')?.odds || 2.1;
+    const dOdd = mainMarket.selections.find((s: any) => s.outcome === 'X')?.odds || 3.1;
+    const aOdd = mainMarket.selections.find((s: any) => s.outcome === '2')?.odds || 3.4;
+
+    // 3. Find Correct Score market
+    const csMarketIndex = markets.findIndex((m: any) => m.type === 'CORRECT_SCORE');
+    if (csMarketIndex === -1) return false;
+
+    // 4. Generate new selections
+    const newSelections = this.generateDefaultCorrectScores(match.home_team, match.away_team, {
+      home: hOdd,
+      draw: dOdd,
+      away: aOdd
+    });
+
+    // 5. Update match markets
+    const updatedMarkets = [...markets];
+    updatedMarkets[csMarketIndex] = {
+      ...updatedMarkets[csMarketIndex],
+      selections: newSelections,
+      updatedAt: new Date().toISOString()
+    };
+
+    const { error: updateError } = await client
+      .from('matches')
+      .update({ markets: updatedMarkets, updated_at: new Date().toISOString() })
+      .eq('id', matchId);
+
+    return !updateError;
   }
 }

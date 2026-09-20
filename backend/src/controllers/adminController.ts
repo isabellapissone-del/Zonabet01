@@ -297,6 +297,32 @@ export class AdminController {
     }
   }
 
+  static async recalculateCorrectScoreOdds(req: AuthenticatedRequest, res: Response): Promise<void> {
+    if (!req.user) return;
+    const { id } = req.params;
+
+    try {
+      const success = await MatchService.recalculateCorrectScoreOdds(id);
+      if (success) {
+        AuditService.log(
+          req.user.userId,
+          req.user.email,
+          'RECALCULATE_CS_ODDS',
+          'Match',
+          id,
+          {},
+          { action: 'recalculate_correct_score_odds' },
+          req.ip
+        );
+        res.status(200).json({ message: 'Odds de Resultado Correto recalculadas com base nas odds 1X2!' });
+      } else {
+        res.status(400).json({ error: 'Não foi possível recalcular as odds. Verifique se o mercado de Resultado Correto existe.' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || 'Erro interno ao recalcular odds' });
+    }
+  }
+
   static async updateMatchStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
     if (!req.user) return;
     const { id } = req.params;

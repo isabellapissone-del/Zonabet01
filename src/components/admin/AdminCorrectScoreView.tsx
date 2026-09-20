@@ -101,6 +101,29 @@ export const AdminCorrectScoreView: React.FC<AdminCorrectScoreViewProps> = ({ ma
     }
   };
 
+  const handleRecalculateOdds = async (matchId: string) => {
+    if (!window.confirm('Tem a certeza que deseja recalcular todas as odds deste mercado? Isto irá substituir as odds manuais por valores calculados automaticamente com base nas odds 1X2.')) {
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      await api.recalculateCorrectScoreOdds(matchId);
+      setSuccess('Odds recalculadas com sucesso!');
+      onRefresh();
+      
+      const updatedMatchRes = await api.getMatches();
+      const updatedMatch = updatedMatchRes.matches.find((m: Match) => m.id === matchId);
+      if (updatedMatch) setSelectedMatch(updatedMatch);
+    } catch (err: any) {
+      setError(err.message || 'Erro ao recalcular odds');
+    } finally {
+      setLoading(false);
+      setTimeout(() => setSuccess(null), 3000);
+    }
+  };
+
   const getMarketExposure = (market: Market) => {
     // This would ideally come from the RiskService via API
     // For now we'll simulate or sum up potential payouts if we had bet data
@@ -211,11 +234,21 @@ export const AdminCorrectScoreView: React.FC<AdminCorrectScoreViewProps> = ({ ma
                 </div>
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => handleRecalculateOdds(selectedMatch.id)}
+                    disabled={loading}
+                    className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-black rounded-xl flex items-center gap-2 transition-all border border-slate-600"
+                    title="Recalcular todas as odds com base nas odds 1X2 do jogo"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">Auto-Odds</span>
+                  </button>
+                  <button
                     onClick={() => setIsAddingScore(true)}
                     className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-black rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-cyan-500/20"
                   >
                     <Plus className="w-4 h-4" />
-                    <span>Adicionar Placar</span>
+                    <span className="hidden sm:inline">Adicionar Placar</span>
+                    <span className="sm:hidden">Novo</span>
                   </button>
                 </div>
               </div>

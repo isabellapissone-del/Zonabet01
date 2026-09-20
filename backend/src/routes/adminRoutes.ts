@@ -11,6 +11,7 @@ router.get('/dashboard', AdminController.getDashboardStats);
 router.post('/matches', AdminController.createMatch);
 router.put('/matches/:id/odds', AdminController.updateOdds);
 router.put('/matches/:id/status', AdminController.updateMatchStatus);
+router.post('/matches/:id/recalculate-correct-score', AdminController.recalculateCorrectScoreOdds);
 router.post('/matches/:id/result', AdminController.enterResult);
 router.post('/matches/:id/cancel', AdminController.cancelMatch);
 
