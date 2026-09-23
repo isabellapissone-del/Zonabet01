@@ -20,6 +20,8 @@ import { settingsService } from '../services/settingsService.ts';
 import { RiskService } from '../services/riskService.ts';
 import { ReferralService } from '../services/referralService.ts';
 
+import { AIService } from '../services/aiService.ts';
+
 export class AdminController {
   static async getDashboardStats(req: AuthenticatedRequest, res: Response): Promise<void> {
     const client = supabaseService.getClient();
@@ -1048,6 +1050,55 @@ export class AdminController {
       res.status(201).json({ message: 'Nova opção de resultado adicionada com sucesso!', market });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  }
+
+  static async analyzeMatches(req: AuthenticatedRequest, res: Response): Promise<void> {
+    if (!req.user) return;
+    const { image } = req.body;
+
+    if (!image) {
+      res.status(400).json({ error: 'Nenhuma imagem fornecida.' });
+      return;
+    }
+
+    try {
+      const data = await AIService.analyzeMatchesFromImage(image);
+      res.status(200).json(data);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  static async getTeams(req: AuthenticatedRequest, res: Response): Promise<void> {
+    if (!req.user) return;
+    try {
+      const teams = db.teams;
+      res.status(200).json({ teams });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+
+  static async createTeam(req: AuthenticatedRequest, res: Response): Promise<void> {
+    if (!req.user) return;
+    const { name, shortName, competitionId } = req.body;
+    if (!name) {
+      res.status(400).json({ error: 'Nome da equipa é obrigatório.' });
+      return;
+    }
+
+    try {
+      const newTeam = {
+        id: `team-${Date.now()}`,
+        name,
+        shortName: shortName || name.substring(0, 3).toUpperCase(),
+        competitionId
+      };
+      db.teams.push(newTeam);
+      res.status(201).json({ message: 'Equipa cadastrada com sucesso!', team: newTeam });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   }
 }

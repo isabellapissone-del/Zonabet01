@@ -89,6 +89,15 @@ export interface Competition {
   category?: CompetitionCategory;
 }
 
+export interface Team {
+  id: string;
+  name: string;
+  shortName?: string;
+  competitionId?: string;
+  logoUrl?: string;
+  createdAt?: string;
+}
+
 export interface BetSlipItem {
   matchId: string;
   matchTitle: string;

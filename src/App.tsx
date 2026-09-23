@@ -9,6 +9,7 @@ import { AuthModal } from './components/AuthModal.tsx';
 import { UserAccountModal } from './components/UserAccountModal.tsx';
 import { WalletActionModal } from './components/WalletActionModal.tsx';
 import { AdminPanel } from './components/AdminPanel.tsx';
+import { RulesView } from './components/RulesView.tsx';
 import { SecretAdminModal } from './components/SecretAdminModal.tsx';
 import { WhatsAppButton } from './components/WhatsAppButton.tsx';
 import { PWAInstallButton } from './components/PWAInstallButton.tsx';
@@ -21,7 +22,7 @@ import { safeStorage } from './utils/storage.ts';
 function MainLayout() {
   const { user, refreshUserData } = useAuth();
   const { items, setIsOpenMobile } = useBetSlip();
-  const [currentView, setCurrentView] = useState<'sportsbook' | 'account' | 'admin'>('sportsbook');
+  const [currentView, setCurrentView] = useState<'sportsbook' | 'account' | 'admin' | 'rules'>('sportsbook');
   const [accountTab, setAccountTab] = useState<'wallet' | 'deposit' | 'withdraw' | 'bets' | 'transactions' | 'referrals'>('bets');
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login');
@@ -259,6 +260,10 @@ function MainLayout() {
           />
         )}
 
+        {currentView === 'rules' && (
+          <RulesView />
+        )}
+
         {currentView === 'admin' && user?.role === 'ADMIN' && (
           <AdminPanel onBackToSportsbook={() => setCurrentView('sportsbook')} />
         )}
@@ -363,6 +368,13 @@ function MainLayout() {
           </div>
 
           <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 text-[11px]">
+            <button 
+              onClick={() => setCurrentView('rules')}
+              className="text-slate-400 hover:text-emerald-400 transition-colors"
+            >
+              Regras de Apostas
+            </button>
+            <span>•</span>
             <span className="text-slate-400 flex items-center gap-1">
               <Shield className="w-3.5 h-3.5 text-emerald-500" />
               Ambiente Seguro

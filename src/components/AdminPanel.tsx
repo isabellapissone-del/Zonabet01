@@ -79,7 +79,7 @@ export type AdminSection =
 export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) => {
   const [section, setSection] = useState<AdminSection>('dashboard');
   const [jogadoresSubTab, setJogadoresSubTab] = useState<'cadastrar' | 'lista' | 'saldo' | 'historico'>('lista');
-  const [jogosSubTab, setJogosSubTab] = useState<'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado'>('todos');
+  const [jogosSubTab, setJogosSubTab] = useState<'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado' | 'importar-imagem'>('todos');
   const [apostasSubTab, setApostasSubTab] = useState<'todas' | 'pendentes' | 'vencedoras' | 'perdedoras' | 'anuladas'>('todas');
   const [financeiroSubTab, setFinanceiroSubTab] = useState<'depositos' | 'levantamentos' | 'transacoes' | 'saldos'>('depositos');
 
@@ -800,6 +800,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
             competitions={competitions}
             activeSubTab={jogosSubTab}
             setActiveSubTab={setJogosSubTab}
+            onRefreshMatches={loadData}
             onOpenCreateMatchModal={() => setShowCreateMatch(true)}
             onOpenOddsModal={(m) => {
               setShowOddsModal(m);

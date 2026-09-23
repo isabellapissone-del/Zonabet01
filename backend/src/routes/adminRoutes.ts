@@ -33,6 +33,13 @@ router.get('/deposit-proofs', AdminController.getDepositProofs);
 router.patch('/deposit-proofs/:id/status', AdminController.updateDepositProofStatus);
 router.get('/audit-logs', AdminController.getAuditLogs);
 
+// AI & OCR
+router.post('/ai/analyze-matches', AdminController.analyzeMatches);
+
+// Teams
+router.get('/teams', AdminController.getTeams);
+router.post('/teams', AdminController.createTeam);
+
 // System Settings & Risk Control
 router.get('/settings', AdminController.getSettings);
 router.put('/settings', AdminController.updateSettings);

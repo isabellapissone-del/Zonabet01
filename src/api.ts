@@ -140,6 +140,17 @@ export const api = {
     }),
   recalculateCorrectScoreOdds: (matchId: string) =>
     request<{ message: string }>(`/admin/matches/${matchId}/recalculate-correct-score`, { method: 'POST' }),
+  analyzeMatchImage: (imageData: string) =>
+    request<{ matches: any[] }>('/admin/ai/analyze-matches', {
+      method: 'POST',
+      body: JSON.stringify({ image: imageData }),
+    }),
+  getTeams: () => request<{ teams: any[] }>('/admin/teams'),
+  createTeam: (body: { name: string; shortName?: string; competitionId?: string }) =>
+    request<{ message: string; team: any }>('/admin/teams', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   getUsers: () => request<{ users: any[] }>('/admin/users'),
   adminCreateUser: (body: {
     name: string;

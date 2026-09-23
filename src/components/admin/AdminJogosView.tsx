@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Match, Competition } from '../../types.ts';
+import { AdminImportImageView } from './AdminImportImageView.tsx';
 import {
   Trophy,
   Plus,
@@ -14,19 +15,21 @@ import {
   XCircle,
   RefreshCw,
   Eye,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface AdminJogosViewProps {
   matches: Match[];
   competitions: Competition[];
-  activeSubTab: 'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado';
-  setActiveSubTab: (tab: 'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado') => void;
+  activeSubTab: 'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado' | 'importar-imagem';
+  setActiveSubTab: (tab: 'todos' | 'criar' | 'editar' | 'encerrar' | 'resultado' | 'importar-imagem') => void;
   onOpenCreateMatchModal: () => void;
   onOpenOddsModal: (m: Match) => void;
   onOpenResultModal: (m: Match) => void;
   onOpenCancelModal: (m: Match) => void;
   onDeleteMatch: (m: Match) => void;
   onStatusChange: (matchId: string, status: 'OPEN' | 'SUSPENDED') => void;
+  onRefreshMatches?: () => void;
 }
 
 export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
@@ -40,6 +43,7 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
   onOpenCancelModal,
   onDeleteMatch,
   onStatusChange,
+  onRefreshMatches,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'ALL' | 'MOCAMBOLA' | 'PROVINCIAL' | 'DISTRITAL'>('ALL');
@@ -86,6 +90,7 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
             {activeSubTab === 'editar' && 'Editar Jogo & Odds'}
             {activeSubTab === 'encerrar' && 'Encerrar / Trancar / Cancelar Jogo'}
             {activeSubTab === 'resultado' && 'Inserir Resultado & Liquidar Apostas'}
+            {activeSubTab === 'importar-imagem' && 'Importar Partidas por Imagem (IA)'}
           </span>
         </div>
 
@@ -153,10 +158,31 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
             <CheckCircle className="w-3.5 h-3.5" />
             <span>Inserir resultado</span>
           </button>
+
+          <button
+            onClick={() => setActiveSubTab('importar-imagem')}
+            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
+              activeSubTab === 'importar-imagem'
+                ? 'bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/20'
+                : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
+            }`}
+          >
+            <ImageIcon className="w-3.5 h-3.5" />
+            <span>Importar por imagem</span>
+          </button>
         </div>
       </div>
 
       {/* Sub-tab instruction notices */}
+      {activeSubTab === 'importar-imagem' && (
+        <AdminImportImageView 
+          matches={matches}
+          competitions={competitions} 
+          onMatchesImported={onRefreshMatches}
+          onClose={() => setActiveSubTab('todos')}
+        />
+      )}
+
       {activeSubTab === 'resultado' && (
         <div className="p-3.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl flex items-center justify-between text-xs text-cyan-300">
           <span className="flex items-center gap-2">
@@ -176,7 +202,8 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
       )}
 
       {/* Search & Filters */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+      {activeSubTab !== 'importar-imagem' && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5 text-xs">
           <select
             value={categoryFilter}
@@ -225,9 +252,11 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
           </button>
         </div>
       </div>
+      )}
 
       {/* Matches Table */}
-      <div className="overflow-x-auto rounded-2xl border border-slate-800">
+      {activeSubTab !== 'importar-imagem' && (
+        <div className="overflow-x-auto rounded-2xl border border-slate-800">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-800/90 text-slate-400 uppercase font-bold text-[10px] border-b border-slate-700">
             <tr>
@@ -375,6 +404,7 @@ export const AdminJogosView: React.FC<AdminJogosViewProps> = ({
           </tbody>
         </table>
       </div>
+    )}
     </div>
   );
 };

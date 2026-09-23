@@ -21,8 +21,8 @@ import {
 } from 'lucide-react';
 
 interface HeaderProps {
-  currentView: 'sportsbook' | 'account' | 'admin';
-  setCurrentView: (view: 'sportsbook' | 'account' | 'admin') => void;
+  currentView: 'sportsbook' | 'account' | 'admin' | 'rules';
+  setCurrentView: (view: 'sportsbook' | 'account' | 'admin' | 'rules') => void;
   openAuthModal: (mode: 'login' | 'register') => void;
   onOpenDeposit?: () => void;
   onOpenWithdraw?: () => void;
@@ -68,7 +68,7 @@ export const Header: React.FC<HeaderProps> = ({
     handleNav('sportsbook');
   };
 
-  const handleNav = (view: 'sportsbook' | 'account' | 'admin') => {
+  const handleNav = (view: 'sportsbook' | 'account' | 'admin' | 'rules') => {
     setCurrentView(view);
     setMobileMenuOpen(false);
   };
@@ -122,6 +122,15 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Trophy className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               <span>Moçambola & Nacional</span>
+            </button>
+            <button
+              onClick={() => handleNav('rules')}
+              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                currentView === 'rules' ? 'bg-slate-800/80 text-emerald-400 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Book className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Regras</span>
             </button>
             <button
               onClick={() => {
@@ -372,6 +381,18 @@ export const Header: React.FC<HeaderProps> = ({
                 >
                   <Trophy className="w-4 h-4 text-emerald-400" />
                   <span>Jogos & Mercados 1X2</span>
+                </button>
+
+                <button
+                  onClick={() => handleNav('rules')}
+                  className={`w-full p-3 rounded-xl text-left text-xs font-bold flex items-center gap-3 transition-colors ${
+                    currentView === 'rules'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                >
+                  <Book className="w-4 h-4 text-emerald-400" />
+                  <span>Regulamento Oficial</span>
                 </button>
 
                 {user && (
