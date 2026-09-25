@@ -27,10 +27,7 @@ class SupabaseService {
 
   public init() {
     console.log('[Supabase Diagnostic] Initializing...');
-    console.log('[Supabase Diagnostic] SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
-    console.log('[Supabase Diagnostic] VITE_SUPABASE_URL exists:', !!process.env.VITE_SUPABASE_URL);
-    console.log('[Supabase Diagnostic] SUPABASE_SERVICE_ROLE_KEY exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-    console.log('[Supabase Diagnostic] SUPABASE_ANON_KEY exists:', !!process.env.SUPABASE_ANON_KEY);
+    console.log('[Supabase Diagnostic] Available environment keys:', Object.keys(process.env));
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
     this.url = rawUrl
