@@ -27,17 +27,19 @@ class SupabaseService {
 
   public init() {
     console.log('[Supabase Diagnostic] Initializing...');
-    console.log('[Supabase Diagnostic] Available environment keys:', Object.keys(process.env));
 
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
     this.url = rawUrl
       ? rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
       : null;
 
+    // Prioritizar SERVICE_ROLE_KEY no Backend (se configurada)
     const rawKey =
+      process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.SUPABASE_ANON_KEY ||
       process.env.VITE_SUPABASE_ANON_KEY ||
       null;
+    
     this.key = rawKey ? rawKey.trim() : null;
 
     if (this.url && this.key && this.url.startsWith('http')) {
@@ -48,13 +50,13 @@ class SupabaseService {
             autoRefreshToken: false,
           },
         });
-        console.log(`[Supabase] Conectado ao endpoint: ${this.url}`);
+        console.log(`[Supabase] Cliente inicializado com sucesso. Endpoint: ${this.url}`);
       } catch (err) {
         console.error('[Supabase] Erro ao inicializar cliente:', err);
-        this.client = null;
+        throw new Error('Falha crítica ao inicializar Supabase Client.');
       }
     } else {
-      console.log('[Supabase] Modo local/em memória ativo. Chaves ausentes ou inválidas.');
+      throw new Error('Configuração do Supabase inválida: SUPABASE_URL e/ou SUPABASE_ANON_KEY não definidas no ambiente.');
     }
   }
 
@@ -78,7 +80,7 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: false,
         url: this.url || null,
-        hasServiceKey: false,
+        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
         error: 'Chaves públicas de ligação ao Supabase não configuradas.',
       };
@@ -93,7 +95,7 @@ class SupabaseService {
           realtimeEnabled: true,
           autoSyncActive: false,
           url: this.url,
-          hasServiceKey: false,
+          hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
           hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
           error: `Erro ao testar ligação: ${error.message}. Verifique as políticas RLS.`,
         };
@@ -105,7 +107,7 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: true,
         url: this.url,
-        hasServiceKey: false,
+        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
       };
     } catch (err: any) {
@@ -115,7 +117,7 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: false,
         url: this.url,
-        hasServiceKey: false,
+        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
         error: err.message || 'Falha ao ligar ao Supabase',
       };
