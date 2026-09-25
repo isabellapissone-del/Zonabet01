@@ -123,8 +123,8 @@ export class AuthController {
         }
       }
 
-      const passwordHash = bcrypt.hashSync(password, 10);
-      const userId = `usr-${crypto.randomUUID()}`;
+      const passwordHash = await bcrypt.hash(password, 10);
+      const userId = `usr-${crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')}`;
 
       const assignedRole: 'USER' = 'USER';
       const assignedStatus: 'ACTIVE' = 'ACTIVE';
@@ -133,6 +133,7 @@ export class AuthController {
       // 4. Tratamento do Código de Convite
       let referredBy: string | null = null;
       if (referralCode && referralCode.trim() !== '') {
+        console.log('[Auth Register] Processando código de convite:', referralCode);
         const cleanRef = referralCode.trim().toUpperCase();
         const cleanRefDigits = cleanRef.replace(/\D/g, '');
         
@@ -140,6 +141,7 @@ export class AuthController {
 
         if (inviterInMemory) {
           referredBy = inviterInMemory.id;
+          console.log('[Auth Register] Inviter found in memory:', referredBy);
         } else {
           // Busca robusta: por código exato ou por telefone (removendo espaços)
           // Nota: PostgREST .or não suporta funções complexas, então buscamos por ilike no código e no telefone
@@ -153,6 +155,9 @@ export class AuthController {
             console.warn('[Auth Register] Erro ao procurar referenciador (ignorado):', refError.message);
           } else if (inviterProfile) {
             referredBy = inviterProfile.id;
+            console.log('[Auth Register] Inviter found in Supabase:', referredBy);
+          } else {
+            console.log('[Auth Register] Inviter not found for code:', cleanRef);
           }
         }
       }
@@ -184,6 +189,7 @@ export class AuthController {
 
       // 6. Gravação primária direta em public.profiles
       // Incluímos email e password_hash se a tabela os tiver (conforme verificado via inspeção)
+      console.log('[Auth Register] Gravando perfil no Supabase...', { id: newUser.id, phone: newUser.phone });
       const { error: insertError } = await supabase
         .from('profiles')
         .insert({
@@ -202,7 +208,7 @@ export class AuthController {
         });
 
       if (insertError) {
-        console.error('[Auth Register] Erro crítico no Supabase ao inserir perfil:', {
+        console.error('[Auth Register] Erro Supabase INSERT profiles:', {
           code: insertError.code,
           message: insertError.message,
           details: insertError.details,
@@ -224,11 +230,14 @@ export class AuthController {
           res.status(500).json({ 
             error: `Falha na persistência de dados: ${insertError.message}`,
             details: insertError.details,
-            code: insertError.code
+            code: insertError.code,
+            hint: insertError.hint
           });
         }
         return;
       }
+
+      console.log('[Auth Register] Perfil gravado com sucesso.');
 
       // 8. Salvar credenciais seguras
       try {
@@ -293,10 +302,15 @@ export class AuthController {
         },
       });
     } catch (globalErr: any) {
-      console.error('[Auth Register] Erro inesperado no fluxo de cadastro:', globalErr);
+      console.error('[Auth Register] Erro crítico inesperado no fluxo de cadastro:', {
+        message: globalErr.message,
+        stack: globalErr.stack,
+        name: globalErr.name
+      });
       res.status(500).json({ 
-        error: 'Ocorreu um erro interno ao processar o seu cadastro. Por favor, tente novamente.',
-        details: globalErr.message 
+        error: 'Ocorreu um erro interno ao processar o seu cadastro no servidor. Por favor, tente novamente.',
+        details: globalErr.message,
+        type: globalErr.name
       });
     }
   }

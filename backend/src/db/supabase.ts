@@ -31,7 +31,7 @@ class SupabaseService {
   private key: string | null = null;
 
   private getVaultKey(): Buffer {
-    const secret = config.jwtSecret || process.env.JWT_SECRET || 'zonabet-auth-internal-secure-key';
+    const secret = String(config.jwtSecret || process.env.JWT_SECRET || 'zonabet-auth-internal-secure-key');
     return crypto.createHash('sha256').update(secret).digest();
   }
 
@@ -48,6 +48,7 @@ class SupabaseService {
   private decryptVault(encryptedString: string): any {
     const tryDecrypt = (secret: string) => {
       try {
+        if (typeof secret !== 'string') return null;
         const parts = encryptedString.split(':');
         if (parts.length !== 3) return null;
         const [ivHex, tagHex, cipherHex] = parts;
