@@ -26,13 +26,18 @@ class SupabaseService {
   }
 
   public init() {
+    console.log('[Supabase Diagnostic] Initializing...');
+    console.log('[Supabase Diagnostic] SUPABASE_URL exists:', !!process.env.SUPABASE_URL);
+    console.log('[Supabase Diagnostic] VITE_SUPABASE_URL exists:', !!process.env.VITE_SUPABASE_URL);
+    console.log('[Supabase Diagnostic] SUPABASE_SERVICE_ROLE_KEY exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+    console.log('[Supabase Diagnostic] SUPABASE_ANON_KEY exists:', !!process.env.SUPABASE_ANON_KEY);
+
     const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
     this.url = rawUrl
       ? rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
       : null;
 
     const rawKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.SUPABASE_ANON_KEY ||
       process.env.VITE_SUPABASE_ANON_KEY ||
       null;
@@ -52,7 +57,7 @@ class SupabaseService {
         this.client = null;
       }
     } else {
-      console.log('[Supabase] Modo local/em memória ativo. Configure as chaves no .env para persistência real.');
+      console.log('[Supabase] Modo local/em memória ativo. Chaves ausentes ou inválidas.');
     }
   }
 
@@ -76,9 +81,9 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: false,
         url: this.url || null,
-        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        hasServiceKey: false,
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
-        error: 'Chaves de ligação ao Supabase não configuradas.',
+        error: 'Chaves públicas de ligação ao Supabase não configuradas.',
       };
     }
 
@@ -91,11 +96,9 @@ class SupabaseService {
           realtimeEnabled: true,
           autoSyncActive: false,
           url: this.url,
-          hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+          hasServiceKey: false,
           hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
-          error: error.message.includes('not find') || error.code === 'PGRST205'
-            ? 'As tabelas ainda não foram criadas no Supabase. Por favor, execute o script SQL DDL no SQL Editor do Supabase.'
-            : `Erro ao aceder à tabela 'profiles': ${error.message}.`,
+          error: `Erro ao testar ligação: ${error.message}. Verifique as políticas RLS.`,
         };
       }
 
@@ -105,7 +108,7 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: true,
         url: this.url,
-        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        hasServiceKey: false,
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
       };
     } catch (err: any) {
@@ -115,7 +118,7 @@ class SupabaseService {
         realtimeEnabled: true,
         autoSyncActive: false,
         url: this.url,
-        hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        hasServiceKey: false,
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
         error: err.message || 'Falha ao ligar ao Supabase',
       };
