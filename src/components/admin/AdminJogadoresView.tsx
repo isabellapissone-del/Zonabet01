@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../../context/AuthContext.tsx';
 import { User } from '../../types.ts';
 import { api } from '../../api.ts';
 import {
@@ -51,6 +52,9 @@ export const AdminJogadoresView: React.FC<AdminJogadoresViewProps> = ({
   notifySuccess,
   notifyError,
 }) => {
+  const { user } = useAuth();
+  const canManageAdmins = user?.role === 'ADMIN';
+
   // Form State for Cadastrar Jogador
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('+258 ');
@@ -553,6 +557,7 @@ export const AdminJogadoresView: React.FC<AdminJogadoresViewProps> = ({
                           </button>
 
                           {/* Delete */}
+                          {canManageAdmins && (
                           <button
                             onClick={() => onDeleteUser(u)}
                             className="p-1 bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded-lg border border-slate-700 transition-colors"
@@ -560,6 +565,7 @@ export const AdminJogadoresView: React.FC<AdminJogadoresViewProps> = ({
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
+                          )}
                         </div>
                       </td>
                     </tr>

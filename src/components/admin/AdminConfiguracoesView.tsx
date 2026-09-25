@@ -86,6 +86,12 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
   const [waButtonText, setWaButtonText] = useState('Apoio WhatsApp');
   const [waPosition, setWaPosition] = useState<'bottom-right' | 'bottom-left'>('bottom-right');
 
+  // Pagamentos
+  const [payOperator, setPayOperator] = useState('e-Mola (Movitel)');
+  const [payNumber, setPayNumber] = useState('867090687');
+  const [payHolder, setPayHolder] = useState('Aninha Basto');
+  const [payInstructions, setPayInstructions] = useState('Enviar dinheiro e submeter o talão.');
+
   // Saving state
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -110,6 +116,12 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
         setWaMessage(settings.whatsapp.message);
         setWaButtonText(settings.whatsapp.buttonText);
         setWaPosition(settings.whatsapp.position);
+      }
+      if (settings.officialPaymentAccount) {
+        setPayOperator(settings.officialPaymentAccount.operator);
+        setPayNumber(settings.officialPaymentAccount.number);
+        setPayHolder(settings.officialPaymentAccount.holder);
+        setPayInstructions(settings.officialPaymentAccount.instructions);
       }
     }
   }, [settings]);
@@ -183,7 +195,29 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
     }
   };
 
-  // Simulation calculations
+  const handleSavePagamentos = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
+    try {
+      await onUpdateSettings({
+        officialPaymentAccount: {
+          operator: payOperator,
+          number: payNumber,
+          holder: payHolder,
+          instructions: payInstructions,
+        },
+      });
+      setSuccessMessage('Configurações de Conta de Pagamento atualizadas!');
+      setTimeout(() => setSuccessMessage(null), 4000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Erro ao guardar configurações de Pagamento');
+    } finally {
+      setSaving(false);
+    }
+  };
   const simAmountNum = parseFloat(simulationAmount) || 0;
   const simFeePct = feeActive ? parseFloat(feePct) || 0 : 0;
   const simFeeAmount = Math.round((simAmountNum * (simFeePct / 100)) * 100) / 100;
@@ -699,26 +733,25 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
             </div>
           </div>
 
-          <div className="p-4 bg-slate-900/80 rounded-xl border border-slate-800 space-y-2 text-xs">
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Operadora:</span>
-              <span className="font-bold text-orange-400">e-Mola (Movitel Moçambique)</span>
+          <form onSubmit={handleSavePagamentos} className="space-y-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Operadora</label>
+              <input type="text" value={payOperator} onChange={(e) => setPayOperator(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-orange-500" />
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Número Oficial:</span>
-              <span className="font-mono font-black text-white text-base">867090687</span>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Número Oficial</label>
+              <input type="text" value={payNumber} onChange={(e) => setPayNumber(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono text-xs focus:outline-none focus:border-orange-500" />
             </div>
-            <div className="flex justify-between py-1 border-b border-slate-800">
-              <span className="text-slate-400">Titular Registada:</span>
-              <span className="font-bold text-white">Aninha Basto</span>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Titular</label>
+              <input type="text" value={payHolder} onChange={(e) => setPayHolder(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-orange-500" />
             </div>
-            <div className="flex justify-between py-1">
-              <span className="text-slate-400">Instruções aos Apostadores:</span>
-              <span className="text-slate-300 font-medium text-right max-w-xs">
-                Enviar dinheiro para 867090687 e submeter o talão na tela de depósito para crédito imediato.
-              </span>
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">Instruções</label>
+              <textarea value={payInstructions} onChange={(e) => setPayInstructions(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-orange-500" rows={2} />
             </div>
-          </div>
+            <button type="submit" disabled={saving} className="w-full py-2 bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs rounded-xl transition-all">Guardar Conta</button>
+          </form>
         </div>
       )}
 

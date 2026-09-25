@@ -288,6 +288,14 @@ export interface SystemSettings {
   supportEmail: string;
   currencySymbol: string;
   currencyCode: string;
+
+  // Pagamentos
+  officialPaymentAccount?: {
+    operator: string;
+    number: string;
+    holder: string;
+    instructions: string;
+  };
 }
 
 export interface OutcomeRisk {
