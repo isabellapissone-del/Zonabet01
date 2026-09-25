@@ -17,7 +17,6 @@ import {
   Phone,
   Radio,
   Gift,
-  Download,
   Book,
 } from 'lucide-react';
 
@@ -162,17 +161,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Admin</span>
               </button>
             )}
-            <button
-              id="header-download-project-btn"
-              href="/zonabet-projeto-completo.tar.gz"
-              download="zonabet-projeto-completo.tar.gz"
-              className="px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm font-bold text-emerald-300 hover:text-emerald-200 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 transition-all flex items-center gap-1.5"
-              title="Baixar Pacote Completo do Projeto (.tar.gz)"
-            >
-              <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
-              <span className="hidden xl:inline">Baixar Código</span>
-              <span className="xl:hidden">Baixar</span>
-            </button>
+
             <button
               onClick={() => handleNav('rules')}
               className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
