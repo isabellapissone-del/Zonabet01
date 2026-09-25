@@ -91,6 +91,44 @@ export class AuthController {
       updatedAt: new Date().toISOString(),
     };
 
+    // 1. Obter cliente Supabase com SERVICE_ROLE_KEY obrigatória no backend
+    const supabase = supabaseService.getClient();
+    if (!supabase) {
+      console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend. SUPABASE_SERVICE_ROLE_KEY ausente.');
+      res.status(503).json({ error: 'Serviço de base de dados indisponível. Configuração do Supabase ausente no servidor.' });
+      return;
+    }
+
+    // 2. Gravação primária direta em public.profiles aguardando confirmação
+    const { error: insertError } = await supabase
+      .from('profiles')
+      .insert({
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        phone: newUser.phone,
+        password_hash: newUser.passwordHash,
+        role: newUser.role,
+        balance: 0.00,
+        status: 'ACTIVE',
+        referral_code: newUser.referralCode,
+        referred_by: newUser.referredBy || null,
+        created_at: newUser.createdAt,
+        updated_at: newUser.updatedAt,
+      });
+
+    // 3. Se o INSERT falhar, abortar sem salvar em memória e sem retornar 201
+    if (insertError) {
+      console.error('[Auth Register] Falha ao persistir perfil em public.profiles:', insertError.message || insertError);
+      if (insertError.code === '23505') {
+        res.status(409).json({ error: 'Já existe uma conta associada a este número de celular ou endereço de email no Supabase.' });
+      } else {
+        res.status(500).json({ error: 'Não foi possível gravar o utilizador no Supabase. O registo foi cancelado.' });
+      }
+      return;
+    }
+
+    // 4. Somente após confirmação bem-sucedida da persistência no Supabase:
     db.users.set(userId, newUser);
 
     // Record the referral relationship
@@ -115,10 +153,6 @@ export class AuthController {
     const wallet = await WalletService.getWallet(userId);
     wallet.balance = 0.00;
     wallet.updatedAt = new Date().toISOString();
-
-    // Real-time synchronization with Supabase
-    supabaseService.syncUserRealtime(newUser).catch(console.error);
-    supabaseService.syncWalletRealtime(wallet).catch(console.error);
 
     const tokenPayload: AuthTokenPayload = {
       userId: newUser.id,

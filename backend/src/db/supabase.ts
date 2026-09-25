@@ -33,14 +33,9 @@ class SupabaseService {
       ? rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
       : null;
 
-    // Prioritizar SERVICE_ROLE_KEY no Backend (se configurada)
-    const rawKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.VITE_SUPABASE_ANON_KEY ||
-      null;
-    
-    this.key = rawKey ? rawKey.trim() : null;
+    // Backend usa exclusivamente SUPABASE_SERVICE_ROLE_KEY (sem fallback para ANON_KEY)
+    const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.trim() : null;
+    this.key = rawKey;
 
     if (this.url && this.key && this.url.startsWith('http')) {
       try {
@@ -50,13 +45,14 @@ class SupabaseService {
             autoRefreshToken: false,
           },
         });
-        console.log(`[Supabase] Cliente inicializado com sucesso. Endpoint: ${this.url}`);
+        console.log(`[Supabase] Cliente backend inicializado com sucesso (SERVICE_ROLE). Endpoint: ${this.url}`);
       } catch (err) {
-        console.error('[Supabase] Erro ao inicializar cliente:', err);
-        throw new Error('Falha crítica ao inicializar Supabase Client.');
+        console.error('[Supabase] Erro ao inicializar cliente backend:', err);
+        this.client = null;
       }
     } else {
-      throw new Error('Configuração do Supabase inválida: SUPABASE_URL e/ou SUPABASE_ANON_KEY não definidas no ambiente.');
+      this.client = null;
+      console.warn('[Supabase] Erro de configuração: SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY são obrigatórias no backend.');
     }
   }
 
@@ -82,7 +78,7 @@ class SupabaseService {
         url: this.url || null,
         hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
         hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
-        error: 'Chaves públicas de ligação ao Supabase não configuradas.',
+        error: 'SUPABASE_URL e/ou SUPABASE_SERVICE_ROLE_KEY não configuradas no backend.',
       };
     }
 
