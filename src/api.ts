@@ -40,13 +40,31 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
   if (!response.ok) {
     console.error(`[API Error] ${options.method || 'GET'} ${endpoint} -> ${response.status}:`, data);
-    const message =
-      data.error ||
-      (response.status === 404
-        ? 'Serviço temporariamente indisponível (404).'
-        : response.status === 504
-        ? 'O servidor demorou muito a responder. Tente novamente.'
-        : 'Ocorreu um erro no pedido.');
+    
+    // Extrair mensagem de erro do corpo da resposta ou usar padrão baseado no status
+    let message = data.error || data.message;
+    
+    if (!message) {
+      if (response.status === 404) {
+        message = 'Serviço temporariamente indisponível (404).';
+      } else if (response.status === 504) {
+        message = 'O servidor demorou muito a responder. Tente novamente.';
+      } else if (response.status === 401) {
+        message = 'Sessão expirada ou credenciais inválidas.';
+      } else if (response.status === 403) {
+        message = 'Acesso negado. Não tem permissões para esta ação.';
+      } else if (response.status >= 500) {
+        message = `Erro interno no servidor (${response.status}).`;
+      } else {
+        message = `Ocorreu um erro no pedido (Status: ${response.status}).`;
+      }
+    }
+
+    // Se houver detalhes ou hint (comum em erros Supabase repassados), adicionar à mensagem se em desenvolvimento
+    if (data.details || data.hint) {
+      console.warn('[API Error Details]:', data.details, data.hint);
+    }
+
     throw new Error(message);
   }
 

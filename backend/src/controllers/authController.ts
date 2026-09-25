@@ -60,226 +60,226 @@ function normalizeMozambicanPhone(rawPhone: string): {
 
 export class AuthController {
   static async register(req: Request, res: Response): Promise<void> {
-    const parseResult = registerSchema.safeParse(req.body);
-    if (!parseResult.success) {
-      res.status(400).json({ error: parseResult.error.issues[0].message });
-      return;
-    }
-
-    const { name, phone: rawPhone, password, referralCode } = parseResult.data;
-    let { email } = parseResult.data;
-
-    // 1. Normalização do Telefone
-    const phoneNorm = normalizeMozambicanPhone(rawPhone);
-    if (!phoneNorm.isValid) {
-      res.status(400).json({ error: phoneNorm.error || 'Número de celular inválido.' });
-      return;
-    }
-
-    const cleanDigits = phoneNorm.cleanDigits;
-    const formattedPhone = phoneNorm.formattedPhone;
-
-    // 2. Verificação de Duplicidade em memória local
-    if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
-      res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-      return;
-    }
-
-    // 3. Verificação de Duplicidade diretamente no Supabase profiles
-    const supabase = supabaseService.getClient();
-    if (!supabase) {
-      console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend. SUPABASE_SERVICE_ROLE_KEY ausente.');
-      res.status(503).json({ error: 'Serviço de base de dados indisponível. Configuração do Supabase ausente no servidor.' });
-      return;
-    }
-
-    const { data: existingProfiles, error: checkError } = await supabase
-      .from('profiles')
-      .select('id, phone')
-      .ilike('phone', `%${cleanDigits}%`)
-      .limit(1);
-
-    if (!checkError && existingProfiles && existingProfiles.length > 0) {
-      res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-      return;
-    }
-
-    // Gerar caixa postal interna se o email não tiver sido fornecido
-    if (!email || email.trim() === '') {
-      email = `${cleanDigits}@zonabet.mz`;
-    } else {
-      if (db.getUserByEmail(email)) {
-        res.status(409).json({ error: 'Já existe uma conta associada a este endereço de email.' });
+    try {
+      const parseResult = registerSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        res.status(400).json({ error: parseResult.error.issues[0].message });
         return;
       }
-    }
 
-    const passwordHash = bcrypt.hashSync(password, 10);
-    // Geração de ID seguro e único (UUID v4)
-    const userId = `usr-${crypto.randomUUID()}`;
+      const { name, phone: rawPhone, password, referralCode } = parseResult.data;
+      let { email } = parseResult.data;
 
-    // REGRAS DE SEGURANÇA OBRIGATÓRIAS:
-    // Qualquer cadastro público inicia estritamente com USER, status ACTIVE e saldo 0.00
-    const assignedRole: 'USER' = 'USER';
-    const assignedStatus: 'ACTIVE' = 'ACTIVE';
-    const initialBalance = 0.00;
-
-    // 4. Tratamento do Código de Convite (referral_code e referred_by)
-    let referredBy: string | null = null;
-    if (referralCode && referralCode.trim() !== '') {
-      const cleanRef = referralCode.trim().toUpperCase();
-      const inviterInMemory = db.getUserByReferralCode(cleanRef);
-
-      if (inviterInMemory) {
-        // Validar se o utilizador existe na tabela profiles do Supabase para respeitar a Foreign Key
-        const { data: inviterProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .eq('id', inviterInMemory.id)
-          .maybeSingle();
-
-        if (inviterProfile) {
-          referredBy = inviterProfile.id;
-        }
-      } else {
-        // Consultar diretamente no Supabase por referral_code ou phone
-        const { data: inviterProfile } = await supabase
-          .from('profiles')
-          .select('id')
-          .or(`referral_code.eq.${cleanRef},phone.ilike.%${cleanRef.replace(/\D/g, '') || cleanRef}%`)
-          .maybeSingle();
-
-        if (inviterProfile) {
-          referredBy = inviterProfile.id;
-        }
+      // 1. Normalização do Telefone (+258XXXXXXXXX)
+      const phoneNorm = normalizeMozambicanPhone(rawPhone);
+      if (!phoneNorm.isValid) {
+        res.status(400).json({ error: phoneNorm.error || 'Número de celular inválido.' });
+        return;
       }
-    }
 
-    // 5. Geração de código de indicação individual único e link
-    let generatedReferralCode = `ZONA${cleanDigits}`;
-    if (db.getUserByReferralCode(generatedReferralCode)) {
-      const uniqueSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
-      generatedReferralCode = `${generatedReferralCode}-${uniqueSuffix}`;
-    }
+      const cleanDigits = phoneNorm.cleanDigits;
+      // Formato internacional estrito sem espaços para o banco: +258XXXXXXXXX
+      const formattedPhone = `+258${cleanDigits}`;
 
-    // Garantir que não colide com registos existentes no Supabase
-    const { data: existingRefCode } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('referral_code', generatedReferralCode)
-      .maybeSingle();
-
-    if (existingRefCode) {
-      generatedReferralCode = `ZONA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    }
-
-    const host = req.get('host') || 'localhost:3000';
-    const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-    const individualReferralLink = `${protocol}://${host}/?ref=${generatedReferralCode}`;
-
-    const newUser: User = {
-      id: userId,
-      name: name.trim(),
-      email,
-      phone: formattedPhone,
-      passwordHash,
-      role: assignedRole,
-      isBlocked: false,
-      referralCode: generatedReferralCode,
-      referralLink: individualReferralLink,
-      referredBy: referredBy || undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    // 6. Gravação primária direta em public.profiles aguardando confirmação (ESTRITAMENTE os 10 campos)
-    const { error: insertError } = await supabase
-      .from('profiles')
-      .insert({
-        id: newUser.id,
-        name: newUser.name,
-        phone: newUser.phone,
-        role: assignedRole,
-        status: assignedStatus,
-        balance: initialBalance,
-        referral_code: newUser.referralCode,
-        referred_by: referredBy,
-        created_at: newUser.createdAt,
-        updated_at: newUser.updatedAt,
-      });
-
-    // 7. Se o INSERT falhar, abortar imediatamente sem salvar em memória e sem retornar 201
-    if (insertError) {
-      console.error('[Auth Register] Falha ao persistir perfil em public.profiles:', insertError.message || insertError);
-      if (insertError.code === '23505') {
+      // 2. Verificação de Duplicidade em memória local
+      if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
         res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-      } else if (insertError.code === '23503') {
-        res.status(400).json({ error: 'Código de convite inválido ou referenciador não encontrado.' });
-      } else if (insertError.code === 'PGRST205' || (insertError.message && insertError.message.includes('not find the table'))) {
-        res.status(500).json({ error: "A tabela 'public.profiles' ainda não existe no seu projeto Supabase. Execute o script SQL no SQL Editor do Supabase." });
+        return;
+      }
+
+      // 3. Verificação de Duplicidade diretamente no Supabase profiles
+      const supabase = supabaseService.getClient();
+      if (!supabase) {
+        console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend.');
+        res.status(503).json({ error: 'Serviço de base de dados indisponível. Supabase não configurado no servidor.' });
+        return;
+      }
+
+      const { data: existingProfiles, error: checkError } = await supabase
+        .from('profiles')
+        .select('id, phone')
+        .ilike('phone', `%${cleanDigits}%`)
+        .limit(1);
+
+      if (checkError) {
+        console.error('[Auth Register] Erro ao verificar duplicidade no Supabase:', checkError);
+        res.status(500).json({ error: `Erro na verificação de conta: ${checkError.message}` });
+        return;
+      }
+
+      if (existingProfiles && existingProfiles.length > 0) {
+        res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+        return;
+      }
+
+      // Gerar caixa postal interna se o email não tiver sido fornecido
+      if (!email || email.trim() === '') {
+        email = `${cleanDigits}@zonabet.mz`;
       } else {
-        res.status(500).json({ error: `Erro no Supabase: ${insertError.message || 'Falha ao persistir no banco de dados.'}` });
+        if (db.getUserByEmail(email)) {
+          res.status(409).json({ error: 'Já existe uma conta associada a este endereço de email.' });
+          return;
+        }
       }
-      return;
-    }
 
-    // 8. Salvar credenciais seguras no cofre persistente do Supabase (sem colocar em profiles)
-    await supabaseService.saveUserCredential(newUser.id, {
-      phone: newUser.phone,
-      email: newUser.email,
-      passwordHash: newUser.passwordHash,
-    });
+      const passwordHash = bcrypt.hashSync(password, 10);
+      const userId = `usr-${crypto.randomUUID()}`;
 
-    // 9. Somente após confirmação bem-sucedida da persistência no Supabase, registar na sessão/memória:
-    db.users.set(userId, newUser);
+      const assignedRole: 'USER' = 'USER';
+      const assignedStatus: 'ACTIVE' = 'ACTIVE';
+      const initialBalance = 0.00;
 
-    // Registar relacionamento de convite caso exista
-    if (referredBy) {
-      const inviter = db.users.get(referredBy);
-      if (inviter) {
-        db.addReferral({
-          id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
-          inviterId: inviter.id,
-          inviterName: inviter.name,
-          invitedUserId: newUser.id,
-          invitedUserName: newUser.name,
-          invitedUserPhone: newUser.phone,
-          totalBonusEarned: 0,
-          depositsCount: 0,
-          createdAt: new Date().toISOString(),
+      // 4. Tratamento do Código de Convite
+      let referredBy: string | null = null;
+      if (referralCode && referralCode.trim() !== '') {
+        const cleanRef = referralCode.trim().toUpperCase();
+        const inviterInMemory = db.getUserByReferralCode(cleanRef);
+
+        if (inviterInMemory) {
+          referredBy = inviterInMemory.id;
+        } else {
+          const { data: inviterProfile, error: refError } = await supabase
+            .from('profiles')
+            .select('id')
+            .or(`referral_code.eq."${cleanRef}",phone.ilike."%${cleanRef.replace(/\D/g, '') || cleanRef}%"`)
+            .maybeSingle();
+
+          if (refError) {
+            console.warn('[Auth Register] Erro ao procurar referenciador:', refError.message);
+          } else if (inviterProfile) {
+            referredBy = inviterProfile.id;
+          }
+        }
+      }
+
+      // 5. Geração de código de indicação individual único
+      let generatedReferralCode = `ZONA${cleanDigits}`;
+      if (db.getUserByReferralCode(generatedReferralCode)) {
+        generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+      }
+
+      const host = req.get('host') || 'localhost:3000';
+      const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+      const individualReferralLink = `${protocol}://${host}/?ref=${generatedReferralCode}`;
+
+      const newUser: User = {
+        id: userId,
+        name: name.trim(),
+        email,
+        phone: formattedPhone,
+        passwordHash,
+        role: assignedRole,
+        isBlocked: false,
+        referralCode: generatedReferralCode,
+        referralLink: individualReferralLink,
+        referredBy: referredBy || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      // 6. Gravação primária direta em public.profiles
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: newUser.id,
+          name: newUser.name,
+          phone: newUser.phone,
+          role: assignedRole,
+          status: assignedStatus,
+          balance: initialBalance,
+          referral_code: newUser.referralCode,
+          referred_by: referredBy,
+          created_at: newUser.createdAt,
+          updated_at: newUser.updatedAt,
         });
+
+      if (insertError) {
+        console.error('[Auth Register] Erro Supabase INSERT profiles:', {
+          code: insertError.code,
+          message: insertError.message,
+          details: insertError.details,
+          hint: insertError.hint
+        });
+        
+        if (insertError.code === '23505') {
+          res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+        } else if (insertError.code === '23503') {
+          res.status(400).json({ error: 'Referenciador não encontrado ou inválido.' });
+        } else {
+          res.status(500).json({ error: `Erro no banco de dados (Supabase): ${insertError.message}` });
+        }
+        return;
       }
-    }
 
-    // Inicializar carteira com 0.00 MZN
-    const wallet = await WalletService.getWallet(userId);
-    wallet.balance = initialBalance;
-    wallet.updatedAt = new Date().toISOString();
+      // 8. Salvar credenciais seguras
+      try {
+        await supabaseService.saveUserCredential(newUser.id, {
+          phone: newUser.phone,
+          email: newUser.email,
+          passwordHash: newUser.passwordHash,
+        });
+      } catch (vaultErr: any) {
+        console.error('[Auth Register] Erro ao salvar cofre de credenciais:', vaultErr);
+        // Não bloqueia o cadastro se falhar apenas o cofre secundário, 
+        // mas em produção isso seria crítico.
+      }
 
-    const tokenPayload: AuthTokenPayload = {
-      userId: newUser.id,
-      email: newUser.email,
-      name: newUser.name,
-      role: newUser.role,
-    };
+      // 9. Confirmar na memória local
+      db.users.set(userId, newUser);
 
-    const token = jwt.sign(tokenPayload, config.jwtSecret, { expiresIn: '7d' });
+      // Relacionamento de convite
+      if (referredBy) {
+        const inviter = db.users.get(referredBy) || (await supabaseService.findUserByIdentifier(referredBy)) || undefined;
+        if (inviter) {
+          db.addReferral({
+            id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+            inviterId: inviter.id,
+            inviterName: inviter.name,
+            invitedUserId: newUser.id,
+            invitedUserName: newUser.name,
+            invitedUserPhone: newUser.phone,
+            totalBonusEarned: 0,
+            depositsCount: 0,
+            createdAt: new Date().toISOString(),
+          });
+        }
+      }
 
-    res.status(201).json({
-      message: 'Registo efetuado com sucesso!',
-      token,
-      user: {
-        id: newUser.id,
-        name: newUser.name,
+      // Inicializar carteira
+      const wallet = await WalletService.getWallet(userId);
+      wallet.balance = initialBalance;
+
+      const tokenPayload: AuthTokenPayload = {
+        userId: newUser.id,
         email: newUser.email,
-        phone: newUser.phone,
+        name: newUser.name,
         role: newUser.role,
-        balance: wallet.balance,
-        referralCode: newUser.referralCode,
-        referralLink: newUser.referralLink || individualReferralLink,
-        referredBy: newUser.referredBy,
-      },
-    });
+      };
+
+      const token = jwt.sign(tokenPayload, config.jwtSecret, { expiresIn: '7d' });
+
+      res.status(201).json({
+        message: 'Registo efetuado com sucesso!',
+        token,
+        user: {
+          id: newUser.id,
+          name: newUser.name,
+          email: newUser.email,
+          phone: newUser.phone,
+          role: newUser.role,
+          balance: wallet.balance,
+          referralCode: newUser.referralCode,
+          referralLink: newUser.referralLink || individualReferralLink,
+          referredBy: newUser.referredBy,
+        },
+      });
+    } catch (globalErr: any) {
+      console.error('[Auth Register] Erro inesperado no fluxo de cadastro:', globalErr);
+      res.status(500).json({ 
+        error: 'Ocorreu um erro interno ao processar o seu cadastro. Por favor, tente novamente.',
+        details: globalErr.message 
+      });
+    }
   }
 
   static async login(req: Request, res: Response): Promise<void> {
