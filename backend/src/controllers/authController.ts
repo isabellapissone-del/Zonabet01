@@ -71,6 +71,7 @@ export class AuthController {
       let { email } = parseResult.data;
 
       // 1. Normalização do Telefone (+258XXXXXXXXX)
+      console.log('[Auth Register] Passo 1: Normalização do telefone');
       const phoneNorm = normalizeMozambicanPhone(rawPhone);
       if (!phoneNorm.isValid) {
         res.status(400).json({ error: phoneNorm.error || 'Número de celular inválido.' });
@@ -82,12 +83,14 @@ export class AuthController {
       const formattedPhone = `+258${cleanDigits}`;
 
       // 2. Verificação de Duplicidade em memória local
+      console.log('[Auth Register] Passo 2: Verificação memória');
       if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
         res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
         return;
       }
 
       // 3. Verificação de Duplicidade
+      console.log('[Auth Register] Passo 3: Verificação Firebase');
       if (firebaseService.isAvailable()) {
         const dbFirestore = firebaseService.getDb()!;
         const phoneVariations = [cleanDigits, formattedPhone, phoneNorm.formattedPhone];
@@ -288,7 +291,9 @@ export class AuthController {
       console.error('[Auth Register] Erro crítico inesperado no fluxo de cadastro:', {
         message: globalErr.message,
         stack: globalErr.stack,
-        name: globalErr.name
+        name: globalErr.name,
+        code: globalErr.code,
+        details: globalErr.details,
       });
       res.status(500).json({ 
         error: 'Ocorreu um erro interno ao processar o seu cadastro no servidor. Por favor, tente novamente.',

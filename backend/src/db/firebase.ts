@@ -106,14 +106,16 @@ class FirebaseService {
         this.app = app;
         try {
           this.db = databaseId ? getFirestore(app, databaseId) : getFirestore(app);
+          console.log('[Firebase] Firestore initialized successfully.');
         } catch (dbErr) {
-          console.warn('[Firebase] Fallback to default firestore database:', dbErr);
+          console.error('[Firebase] Failed to initialize Firestore:', dbErr);
           this.db = getFirestore(app);
         }
         try {
           this.auth = getAuth(app);
+          console.log('[Firebase] Auth initialized successfully.');
         } catch (authErr) {
-          console.warn('[Firebase] Failed to get Auth instance:', authErr);
+          console.error('[Firebase] Failed to initialize Auth:', authErr);
         }
         this.initialized = true;
       } else {
