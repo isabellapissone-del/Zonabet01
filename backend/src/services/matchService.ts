@@ -1,89 +1,83 @@
 import { db } from '../db/store.ts';
 import type { Match, Market, Selection } from '../types/index.ts';
 import { AuditService } from './auditService.ts';
-import { supabaseService } from '../db/supabase.ts';
+import { firebaseService } from '../db/firebase.ts';
 
 export class MatchService {
   /**
-   * Retrieves all matches with their markets and selections from Supabase
+   * Retrieves all matches with their markets and selections from Firebase
    */
   static async getAllMatches(filters?: { status?: string; competitionId?: string; category?: string }): Promise<Match[]> {
     try {
-      const client = supabaseService.getClient();
-      if (client) {
-        let query = client
-          .from('matches')
-          .select(`
-            *,
-            markets (
-              *,
-              selections (*)
-            )
-          `);
+      if (firebaseService.isAvailable()) {
+        const dbFirestore = firebaseService.getDb()!;
+        let query: any = dbFirestore.collection('matches');
         
         if (filters?.status) {
-          const dbStatus = filters.status === 'OPEN' ? 'PRE_MATCH' : filters.status;
-          query = query.eq('status', dbStatus);
+          query = query.where('status', '==', filters.status);
         }
         if (filters?.competitionId) {
-          query = query.eq('competition_id', filters.competitionId);
+          query = query.where('competitionId', '==', filters.competitionId);
         }
 
-        const { data: matchesData, error } = await query.order('start_time', { ascending: true });
+        const snap = await query.get();
         
-        if (!error && matchesData && matchesData.length > 0) {
-          const mapped = matchesData.map((m: any) => {
-            const rawTime = m.start_time || '';
-            const dateParts = rawTime.includes('T') ? rawTime.split('T') : [rawTime || 'Hoje', '15:00'];
-            const comp = db.competitions.find(c => c.id === m.competition_id);
-            const compCategory = (m.competition_category && m.competition_category !== 'Futebol')
-              ? m.competition_category
-              : (comp?.category || (m.competition_id?.toLowerCase().includes('prov') || m.competition_name?.toLowerCase().includes('provincial') ? 'PROVINCIAL' : m.competition_id?.toLowerCase().includes('dist') || m.competition_name?.toLowerCase().includes('distrital') ? 'DISTRITAL' : 'MOCAMBOLA'));
-
-            return {
-              id: m.id,
-              competitionId: m.competition_id,
-              competitionName: m.competition_name || comp?.name || 'Moçambola',
-              competitionCategory: compCategory,
-              homeTeam: m.home_team,
-              awayTeam: m.away_team,
-              kickoffDate: dateParts[0] || 'Hoje',
-              kickoffTime: (dateParts[1] || '15:00').substring(0, 5),
-              status: m.status === 'PRE_MATCH' ? 'OPEN' : m.status || 'OPEN',
-              homeScore: m.home_score,
-              awayScore: m.away_score,
-              isFeatured: m.is_featured ?? false,
-              markets: (m.markets || []).map((mk: any) => ({
-                id: mk.id,
-                name: mk.name,
-                type: mk.type,
-                status: mk.status || 'ACTIVE',
-                maxExposure: mk.max_exposure,
-                maxStake: mk.max_stake,
-                selections: (mk.selections || []).map((s: any) => ({
-                  id: s.id,
-                  outcome: s.outcome,
-                  label: s.label,
-                  odds: Number(s.odds || 1.01),
-                  status: s.status || 'ACTIVE'
-                }))
-              })),
-              createdAt: m.created_at || new Date().toISOString(),
-              updatedAt: m.created_at || new Date().toISOString()
+        if (!snap.empty) {
+          const matches: Match[] = [];
+          for (const doc of snap.docs) {
+            const data = doc.data();
+            const match: Match = {
+              id: data.id,
+              competitionId: data.competitionId,
+              competitionName: data.competitionName,
+              competitionCategory: data.competitionCategory,
+              homeTeam: data.homeTeam,
+              awayTeam: data.awayTeam,
+              kickoffDate: data.startTime.split('T')[0],
+              kickoffTime: data.startTime.split('T')[1].substring(0, 5),
+              status: data.status,
+              homeScore: data.homeScore,
+              awayScore: data.awayScore,
+              isFeatured: data.isFeatured,
+              createdAt: data.createdAt,
+              updatedAt: data.updatedAt,
+              markets: []
             };
-          });
+
+            // Fetch markets from subcollection
+            const marketsSnap = await doc.ref.collection('markets').get();
+            for (const mkDoc of marketsSnap.docs) {
+              const mkData = mkDoc.data();
+              const market: Market = {
+                id: mkData.id,
+                name: mkData.name,
+                type: mkData.type,
+                status: mkData.status,
+                maxExposure: mkData.maxExposure,
+                maxStake: mkData.maxStake,
+                selections: []
+              };
+
+              const selectionsSnap = await mkDoc.ref.collection('selections').get();
+              selectionsSnap.forEach(sDoc => {
+                market.selections.push(sDoc.data() as Selection);
+              });
+              match.markets!.push(market);
+            }
+            matches.push(match);
+          }
 
           if (filters?.category && filters.category !== 'ALL') {
-            return mapped.filter((m: any) => m.competitionCategory === filters.category);
+            return matches.filter((m: Match) => m.competitionCategory === filters.category);
           }
-          return mapped;
+          return matches;
         }
       }
-    } catch (supaErr) {
-      console.warn('[MatchService] Erro ou timeout na consulta Supabase, a utilizar dados locais:', supaErr);
+    } catch (fireErr) {
+      console.warn('[MatchService] Erro ou timeout na consulta Firebase, a utilizar dados locais:', fireErr);
     }
 
-    // Fallback seguro aos dados em memória com todos os filtros respeitados
+    // Fallback seguro aos dados em memória
     let localMatches = Array.from(db.matches.values()).map(m => {
       const comp = db.competitions.find(c => c.id === m.competitionId);
       const compCategory = (m.competitionCategory && m.competitionCategory !== 'Futebol')
@@ -106,69 +100,55 @@ export class MatchService {
 
   static async getMatchById(id: string): Promise<Match | null> {
     try {
-      const client = supabaseService.getClient();
-      if (client) {
-        const { data, error } = await client
-          .from('matches')
-          .select(`
-            *,
-            markets (
-              *,
-              selections (*)
-            )
-          `)
-          .eq('id', id)
-          .single();
+      if (firebaseService.isAvailable()) {
+        const dbFirestore = firebaseService.getDb()!;
+        const doc = await dbFirestore.collection('matches').doc(id).get();
         
-        if (!error && data) {
-          const rawTime = data.start_time || '';
-          const dateParts = rawTime.includes('T') ? rawTime.split('T') : [rawTime || 'Hoje', '15:00'];
-          const comp = db.competitions.find(c => c.id === data.competition_id);
-          const compCategory = (data.competition_category && data.competition_category !== 'Futebol')
-            ? data.competition_category
-            : (comp?.category || (data.competition_id?.toLowerCase().includes('prov') || data.competition_name?.toLowerCase().includes('provincial') ? 'PROVINCIAL' : data.competition_id?.toLowerCase().includes('dist') || data.competition_name?.toLowerCase().includes('distrital') ? 'DISTRITAL' : 'MOCAMBOLA'));
-
-          return {
+        if (doc.exists) {
+          const data = doc.data()!;
+          const match: Match = {
             id: data.id,
-            competitionId: data.competition_id,
-            competitionName: data.competition_name || comp?.name || 'Moçambola',
-            competitionCategory: compCategory,
-            homeTeam: data.home_team,
-            awayTeam: data.away_team,
-            kickoffDate: dateParts[0] || 'Hoje',
-            kickoffTime: (dateParts[1] || '15:00').substring(0, 5),
-            status: data.status === 'PRE_MATCH' ? 'OPEN' : data.status || 'OPEN',
-            homeScore: data.home_score,
-            awayScore: data.away_score,
-            isFeatured: data.is_featured ?? false,
-            markets: (data.markets || []).map((mk: any) => ({
-              id: mk.id,
-              name: mk.name,
-              type: mk.type,
-              status: mk.status || 'ACTIVE',
-              maxExposure: mk.max_exposure,
-              maxStake: mk.max_stake,
-              selections: (mk.selections || []).map((s: any) => ({
-                id: s.id,
-                outcome: s.outcome,
-                label: s.label,
-                odds: Number(s.odds || 1.01),
-                status: s.status || 'ACTIVE'
-              }))
-            })),
-            createdAt: data.created_at || new Date().toISOString(),
-            updatedAt: data.created_at || new Date().toISOString()
+            competitionId: data.competitionId,
+            competitionName: data.competitionName,
+            competitionCategory: data.competitionCategory,
+            homeTeam: data.homeTeam,
+            awayTeam: data.awayTeam,
+            kickoffDate: data.startTime.split('T')[0],
+            kickoffTime: data.startTime.split('T')[1].substring(0, 5),
+            status: data.status,
+            homeScore: data.homeScore,
+            awayScore: data.awayScore,
+            isFeatured: data.isFeatured,
+            createdAt: data.createdAt,
+            updatedAt: data.updatedAt,
+            markets: []
           };
+
+          const marketsSnap = await doc.ref.collection('markets').get();
+          for (const mkDoc of marketsSnap.docs) {
+            const mkData = mkDoc.data();
+            const market: Market = {
+              id: mkData.id,
+              name: mkData.name,
+              type: mkData.type,
+              status: mkData.status,
+              selections: []
+            };
+            const selectionsSnap = await mkDoc.ref.collection('selections').get();
+            selectionsSnap.forEach(sDoc => market.selections.push(sDoc.data() as Selection));
+            match.markets!.push(market);
+          }
+          return match;
         }
       }
-    } catch (supaErr) {
-      console.warn('[MatchService] Erro ao buscar jogo por id no Supabase:', supaErr);
+    } catch (fireErr) {
+      console.warn('[MatchService] Erro ao buscar jogo por id no Firebase:', fireErr);
     }
     return db.matches.get(id) || null;
   }
 
   /**
-   * Creates a new match and its default markets in Supabase
+   * Creates a new match and its default markets in Firebase
    */
   static async createMatch(params: {
     adminId: string;
@@ -226,7 +206,6 @@ export class MatchService {
     };
     match.markets.push(mainMarket);
 
-    // Create Correct Score Market com cálculo automático e inteligente de odds
     const correctScoreMarket: Market = {
       id: `mk-${Date.now()}-cs`,
       name: 'Resultado Correto',
@@ -237,59 +216,9 @@ export class MatchService {
     };
     match.markets.push(correctScoreMarket);
 
-    // Persist to Supabase
-    const client = supabaseService.getClient();
-    if (client) {
-      const { data: mData, error: mError } = await client
-        .from('matches')
-        .insert({
-          id: match.id,
-          competition_id: match.competitionId,
-          competition_name: match.competitionName,
-          competition_category: match.competitionCategory,
-          home_team: match.homeTeam,
-          away_team: match.awayTeam,
-          start_time: `${kickoffDate}T${kickoffTime}:00Z`,
-          status: 'PRE_MATCH',
-          is_featured: match.isFeatured,
-          created_at: match.createdAt
-        })
-        .select()
-        .single();
-
-      if (mError) throw mError;
-
-      // Insert Markets
-      for (const market of match.markets) {
-        const { error: mkError } = await client
-          .from('markets')
-          .insert({
-            id: market.id,
-            match_id: match.id,
-            name: market.name,
-            type: market.type,
-            status: market.status,
-            max_exposure: market.maxExposure
-          });
-        
-        if (mkError) throw mkError;
-
-        // Insert Selections
-        const selectionsToInsert = market.selections.map(s => ({
-          id: s.id,
-          market_id: market.id,
-          outcome: s.outcome,
-          label: s.label,
-          odds: s.odds,
-          status: 'ACTIVE'
-        }));
-
-        const { error: sError } = await client
-          .from('selections')
-          .insert(selectionsToInsert);
-
-        if (sError) throw sError;
-      }
+    // Persist to Firebase
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -318,39 +247,22 @@ export class MatchService {
     mainMarket.selections.find((s) => s.outcome === '2')!.odds = params.odds.away;
     match.updatedAt = new Date().toISOString();
 
-    // Update in Supabase
-    const client = supabaseService.getClient();
-    if (client) {
-      for (const sel of mainMarket.selections) {
-        await client
-          .from('selections')
-          .update({ odds: sel.odds })
-          .eq('id', sel.id);
-      }
-    }
-
-    db.matches.set(match.id, match);
-
-    // Auto-update Correct Score market selections if it exists
+    // Auto-update Correct Score
     const csMarket = match.markets.find((m) => m.type === 'CORRECT_SCORE');
     if (csMarket) {
       const newSelections = this.generateDefaultCorrectScores(match.homeTeam, match.awayTeam, params.odds);
-      
-      // Map new odds to existing selections by outcome
       for (const sel of csMarket.selections) {
         const matchingNew = newSelections.find(ns => ns.outcome === sel.outcome);
-        if (matchingNew) {
-          sel.odds = matchingNew.odds;
-          if (client) {
-            await client
-              .from('selections')
-              .update({ odds: sel.odds })
-              .eq('id', sel.id);
-          }
-        }
+        if (matchingNew) sel.odds = matchingNew.odds;
       }
     }
 
+    // Update in Firebase
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
+    }
+
+    db.matches.set(match.id, match);
     AuditService.log(params.adminId, params.adminEmail, 'UPDATE_ODDS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
   }
@@ -370,12 +282,8 @@ export class MatchService {
     match.status = params.status;
     match.updatedAt = new Date().toISOString();
 
-    const client = supabaseService.getClient();
-    if (client) {
-      await client
-        .from('matches')
-        .update({ status: params.status === 'OPEN' ? 'PRE_MATCH' : params.status })
-        .eq('id', params.matchId);
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -392,12 +300,8 @@ export class MatchService {
 
     market.status = params.status;
     
-    const client = supabaseService.getClient();
-    if (client) {
-      await client
-        .from('markets')
-        .update({ status: params.status })
-        .eq('id', params.marketId);
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -411,15 +315,13 @@ export class MatchService {
     const market = match.markets.find((m) => m.id === params.marketId);
     if (!market) throw new Error('Mercado não encontrado');
 
-    const client = supabaseService.getClient();
     for (const selUpdate of params.selections) {
       const sel = market.selections.find((s) => s.id === selUpdate.id);
-      if (sel) {
-        sel.odds = selUpdate.odds;
-        if (client) {
-          await client.from('selections').update({ odds: sel.odds }).eq('id', sel.id);
-        }
-      }
+      if (sel) sel.odds = selUpdate.odds;
+    }
+
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -444,16 +346,8 @@ export class MatchService {
 
     market.selections.push(newSelection);
 
-    const client = supabaseService.getClient();
-    if (client) {
-      await client.from('selections').insert({
-        id: newSelection.id,
-        market_id: market.id,
-        outcome: newSelection.outcome,
-        label: newSelection.label,
-        odds: newSelection.odds,
-        status: 'ACTIVE'
-      });
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -487,7 +381,6 @@ export class MatchService {
       let calculatedOdds: number;
 
       if (hg > ag) {
-        // Vitória Casa
         const factor = (hOdd / 2.0);
         if (score === '1-0') calculatedOdds = 5.2 * factor + 1.2;
         else if (score === '2-0') calculatedOdds = 7.5 * factor + 1.5;
@@ -501,7 +394,6 @@ export class MatchService {
         else if (score === '4-3') calculatedOdds = 45.0 * factor + 6.0;
         else calculatedOdds = 25.0 + (totalGoals * 5.5) + (diff * 3.0) * factor;
       } else if (ag > hg) {
-        // Vitória Visitante
         const factor = (aOdd / 2.0);
         if (score === '0-1') calculatedOdds = 5.6 * factor + 1.2;
         else if (score === '0-2') calculatedOdds = 8.2 * factor + 1.5;
@@ -515,7 +407,6 @@ export class MatchService {
         else if (score === '3-4') calculatedOdds = 50.0 * factor + 6.0;
         else calculatedOdds = 28.0 + (totalGoals * 6.0) + (diff * 3.5) * factor;
       } else {
-        // Empate
         const factor = (dOdd / 3.0);
         if (score === '0-0') calculatedOdds = 7.5 * factor;
         else if (score === '1-1') calculatedOdds = 5.2 * factor;
@@ -525,7 +416,6 @@ export class MatchService {
         else calculatedOdds = 80.0 * factor;
       }
 
-      // Arredondar para 2 casas decimais e manter limites saudáveis (mínimo 1.20, máximo 120.00)
       const finalOdd = Math.max(1.20, Math.min(120.0, Math.round(calculatedOdds * 100) / 100));
 
       return {
@@ -539,52 +429,30 @@ export class MatchService {
   }
 
   static async recalculateCorrectScoreOdds(matchId: string): Promise<boolean> {
-    const client = supabaseService.getClient();
-    if (!client) return false;
+    const match = await this.getMatchById(matchId);
+    if (!match) return false;
 
-    // 1. Fetch match with markets
-    const { data: match, error } = await client
-      .from('matches')
-      .select('*')
-      .eq('id', matchId)
-      .single();
-
-    if (error || !match) return false;
-
-    const markets = match.markets || [];
-
-    // 2. Find 1X2 odds
-    const mainMarket = markets.find((m: any) => m.type === '1X2');
+    const mainMarket = match.markets.find((m: any) => m.type === '1X2');
     if (!mainMarket) return false;
 
     const hOdd = mainMarket.selections.find((s: any) => s.outcome === '1')?.odds || 2.1;
     const dOdd = mainMarket.selections.find((s: any) => s.outcome === 'X')?.odds || 3.1;
     const aOdd = mainMarket.selections.find((s: any) => s.outcome === '2')?.odds || 3.4;
 
-    // 3. Find Correct Score market
-    const csMarketIndex = markets.findIndex((m: any) => m.type === 'CORRECT_SCORE');
-    if (csMarketIndex === -1) return false;
+    const csMarket = match.markets.find((m: any) => m.type === 'CORRECT_SCORE');
+    if (!csMarket) return false;
 
-    // 4. Generate new selections
-    const newSelections = this.generateDefaultCorrectScores(match.home_team, match.away_team, {
+    csMarket.selections = this.generateDefaultCorrectScores(match.homeTeam, match.awayTeam, {
       home: hOdd,
       draw: dOdd,
       away: aOdd
     });
 
-    // 5. Update match markets
-    const updatedMarkets = [...markets];
-    updatedMarkets[csMarketIndex] = {
-      ...updatedMarkets[csMarketIndex],
-      selections: newSelections,
-      updatedAt: new Date().toISOString()
-    };
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
+    }
 
-    const { error: updateError } = await client
-      .from('matches')
-      .update({ markets: updatedMarkets, updated_at: new Date().toISOString() })
-      .eq('id', matchId);
-
-    return !updateError;
+    db.matches.set(match.id, match);
+    return true;
   }
 }

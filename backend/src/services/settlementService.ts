@@ -3,7 +3,7 @@ import type { Match, Bet } from '../types/index.ts';
 import { WalletService } from './walletService.ts';
 import { AuditService } from './auditService.ts';
 import { Money } from '../utils/money.ts';
-import { supabaseService } from '../db/supabase.ts';
+import { firebaseService } from '../db/firebase.ts';
 import { MatchService } from './matchService.ts';
 import { BetService } from './betService.ts';
 
@@ -25,33 +25,23 @@ export class SettlementService {
     if (!match) throw new Error('Jogo não encontrado');
 
     if (match.status === 'FINISHED') {
-      throw new Error('Este jogo já foi finalizado e liquidado anteriormente. Liquidação duplicada impedida.');
+      throw new Error('Este jogo já foi finalizado e liquidado anteriormente.');
     }
 
-    // Determine 1X2 winning outcome
     let winningOutcome: '1' | 'X' | '2';
-    if (homeScore > awayScore) {
-      winningOutcome = '1';
-    } else if (homeScore === awayScore) {
-      winningOutcome = 'X';
-    } else {
-      winningOutcome = '2';
-    }
+    if (homeScore > awayScore) winningOutcome = '1';
+    else if (homeScore === awayScore) winningOutcome = 'X';
+    else winningOutcome = '2';
 
     const correctScoreStr = `${homeScore}-${awayScore}`;
     const previousStatus = match.status;
 
-    // Update match score & status
     match.homeScore = homeScore;
     match.awayScore = awayScore;
     match.status = 'FINISHED';
     match.updatedAt = new Date().toISOString();
 
-    // Update in-memory match store
-    db.matches.set(match.id, match);
-
-    // Update market selections
-    for (const market of match.markets) {
+    for (const market of match.markets!) {
       market.status = 'SETTLED';
       if (market.type === 'CORRECT_SCORE') {
         let matched = false;
@@ -59,9 +49,7 @@ export class SettlementService {
           if (sel.outcome === correctScoreStr) {
             sel.status = 'SETTLED_WIN';
             matched = true;
-          } else {
-            sel.status = 'SETTLED_LOST';
-          }
+          } else sel.status = 'SETTLED_LOST';
         }
         if (!matched) {
           for (const sel of market.selections) {
@@ -72,62 +60,40 @@ export class SettlementService {
         }
       } else {
         for (const sel of market.selections) {
-          if (sel.outcome === winningOutcome) {
-            sel.status = 'SETTLED_WIN';
-          } else {
-            sel.status = 'SETTLED_LOST';
-          }
+          if (sel.outcome === winningOutcome) sel.status = 'SETTLED_WIN';
+          else sel.status = 'SETTLED_LOST';
         }
       }
     }
 
-    // Persist match update to Supabase
-    const client = supabaseService.getClient();
-    if (client) {
-      try {
-        await client.from('matches').update({
-          status: 'FINISHED',
-          home_score: match.homeScore,
-          away_score: match.awayScore,
-          result: winningOutcome,
-        }).eq('id', matchId);
-      } catch (err: any) {
-        console.warn('[Supabase Match Update Warning]:', err.message);
-      }
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     let settledBetsCount = 0;
     let wonBetsCount = 0;
     let totalPayout = 0;
 
-    // Process all PENDING bets in local db
     for (const bet of db.bets.values()) {
       if (bet.status !== 'PENDING') continue;
-
       const matchingItems = bet.items.filter((item) => item.matchId === matchId);
       if (matchingItems.length === 0) continue;
 
-      // Update items
       for (const item of matchingItems) {
-        const market = match.markets.find((m) => m.id === item.marketId);
+        const market = match.markets!.find((m) => m.id === item.marketId);
         const isCorrectScore = market?.type === 'CORRECT_SCORE' || item.marketName.toLowerCase().includes('correto');
-
         let isWon = false;
         if (isCorrectScore) {
-          if (item.outcome === correctScoreStr) {
-            isWon = true;
-          } else if (item.outcome === 'OTHER' || item.outcome === 'Outro' || item.label.toLowerCase().includes('outro')) {
+          if (item.outcome === correctScoreStr) isWon = true;
+          else if (item.outcome === 'OTHER' || item.outcome === 'Outro' || item.label.toLowerCase().includes('outro')) {
             const otherSelections = market?.selections.filter(s => s.outcome !== 'OTHER' && s.outcome !== 'Outro' && !s.label.toLowerCase().includes('outro')) || [];
             const commonScores = otherSelections.map(s => s.outcome);
             if (!commonScores.includes(correctScoreStr)) isWon = true;
           }
-        } else {
-          isWon = item.outcome === winningOutcome;
-        }
+        } else isWon = item.outcome === winningOutcome;
         item.status = isWon ? 'WON' : 'LOST';
       }
 
-      // Decide bet
       const hasLostItem = bet.items.some((item) => item.status === 'LOST');
       const allItemsDecided = bet.items.every((item) => item.status === 'WON' || item.status === 'VOID');
 
@@ -137,9 +103,7 @@ export class SettlementService {
         settledBetsCount++;
       } else if (allItemsDecided) {
         let activeOdds = 1.0;
-        for (const item of bet.items) {
-          if (item.status === 'WON') activeOdds *= item.oddsAtBetTime;
-        }
+        for (const item of bet.items) if (item.status === 'WON') activeOdds *= item.oddsAtBetTime;
         const finalOdds = Math.round(activeOdds * 100) / 100;
         const payout = Money.multiply(bet.stake, finalOdds);
 
@@ -149,7 +113,6 @@ export class SettlementService {
         wonBetsCount++;
         totalPayout = Money.add(totalPayout, payout);
 
-        // Credit user wallet
         await WalletService.executeTransaction({
           userId: bet.userId,
           type: 'WIN',
@@ -159,21 +122,8 @@ export class SettlementService {
         });
       }
 
-      // Persist bet update to Supabase
-      if (client && bet.status !== 'PENDING') {
-        try {
-          await client.from('bets').update({
-            status: bet.status,
-          }).eq('id', bet.id);
-
-          for (const item of matchingItems) {
-            await client.from('bet_items').update({
-              status: item.status,
-            }).eq('id', item.id);
-          }
-        } catch (err: any) {
-          console.warn('[Supabase Bet Update Warning]:', err.message);
-        }
+      if (firebaseService.isAvailable() && bet.status !== 'PENDING') {
+        await firebaseService.syncBet(bet);
       }
     }
 
@@ -190,9 +140,6 @@ export class SettlementService {
     return { match, settledBetsCount, wonBetsCount, totalPayout };
   }
 
-  /**
-   * Cancels a match and voids/refunds all active bets
-   */
   static async cancelMatch(params: {
     adminId: string;
     adminEmail: string;
@@ -201,55 +148,36 @@ export class SettlementService {
     ip?: string;
   }): Promise<{ match: Match; refundedBetsCount: number; totalRefunded: number }> {
     const { adminId, adminEmail, matchId, reason, ip } = params;
-
     const match = await MatchService.getMatchById(matchId);
     if (!match) throw new Error('Jogo não encontrado');
 
-    if (match.status === 'FINISHED') {
-      throw new Error('Não é possível cancelar um jogo já finalizado e liquidado');
-    }
+    if (match.status === 'FINISHED') throw new Error('Não é possível cancelar um jogo já finalizado');
 
     const previousStatus = match.status;
     match.status = 'CANCELLED';
     match.updatedAt = new Date().toISOString();
 
-    // Update in-memory match store
-    db.matches.set(match.id, match);
-
-    for (const market of match.markets) {
+    for (const market of match.markets!) {
       market.status = 'CLOSED';
       for (const sel of market.selections) sel.status = 'VOID';
     }
 
-    // Persist update
-    const client = supabaseService.getClient();
-    if (client) {
-      try {
-        await client.from('matches').update({
-          status: 'CANCELLED',
-          result: 'CANCELLED',
-        }).eq('id', matchId);
-      } catch (err: any) {
-        console.warn('[Supabase Match Cancel Warning]:', err.message);
-      }
+    if (firebaseService.isAvailable()) {
+      await firebaseService.syncMatch(match);
     }
 
     let refundedBetsCount = 0;
     let totalRefunded = 0;
 
-    // Process pending bets in local db
     for (const bet of db.bets.values()) {
       if (bet.status !== 'PENDING') continue;
-
       const item = bet.items.find((i) => i.matchId === matchId);
       if (!item) continue;
-
       item.status = 'VOID';
 
       if (bet.type === 'SINGLE') {
         bet.status = 'VOID';
         bet.settledAt = new Date().toISOString();
-
         await WalletService.executeTransaction({
           userId: bet.userId,
           type: 'REFUND',
@@ -257,7 +185,6 @@ export class SettlementService {
           reference: bet.id,
           description: `Reembolso por jogo cancelado: ${match.homeTeam} vs ${match.awayTeam}`,
         });
-
         refundedBetsCount++;
         totalRefunded = Money.add(totalRefunded, bet.stake);
       } else {
@@ -277,23 +204,12 @@ export class SettlementService {
         }
       }
 
-      if (client && bet.status !== 'PENDING') {
-        try {
-          await client.from('bets').update({
-            status: bet.status,
-          }).eq('id', bet.id);
-
-          await client.from('bet_items').update({
-            status: 'VOID',
-          }).eq('id', item.id);
-        } catch (err: any) {
-          console.warn('[Supabase Bet Cancel Warning]:', err.message);
-        }
+      if (firebaseService.isAvailable() && bet.status !== 'PENDING') {
+        await firebaseService.syncBet(bet);
       }
     }
 
     AuditService.log(adminId, adminEmail, 'CANCEL_MATCH', 'Match', matchId, { status: previousStatus }, { status: 'CANCELLED', reason, refundedBetsCount, totalRefunded }, ip);
-
     return { match, refundedBetsCount, totalRefunded };
   }
 }

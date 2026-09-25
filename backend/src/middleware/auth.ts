@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config/index.ts';
 import { db } from '../db/store.ts';
 import type { AuthTokenPayload } from '../types/index.ts';
-import { supabaseService } from '../db/supabase.ts';
+import { firebaseService } from '../db/firebase.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload;
@@ -43,12 +43,25 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
 
     let user = db.users.get(payload.userId);
 
-    // Resiliency: Fallback to Supabase if not in memory (common in serverless/Vercel)
-    if (!user && supabaseService.isAvailable()) {
-      const supabaseUser = await supabaseService.findUserById(payload.userId);
-      if (supabaseUser) {
-        db.users.set(supabaseUser.id, supabaseUser);
-        user = supabaseUser;
+    // Resiliency: Fallback to Firebase if not in memory (common in serverless/Vercel)
+    if (!user && firebaseService.isAvailable()) {
+      const dbFirestore = firebaseService.getDb()!;
+      const doc = await dbFirestore.collection('users').doc(payload.userId).get();
+      if (doc.exists) {
+        const d = doc.data()!;
+        user = {
+          id: d.id,
+          name: d.name,
+          phone: d.phone,
+          email: d.email,
+          passwordHash: d.passwordHash || '',
+          role: d.role,
+          isBlocked: d.status === 'BLOCKED',
+          referralCode: d.referralCode,
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt
+        };
+        db.users.set(user.id, user);
       }
     }
 

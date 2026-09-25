@@ -9,7 +9,7 @@ import { WalletService } from '../services/walletService.ts';
 import { AuditService } from '../services/auditService.ts';
 import type { AuthenticatedRequest } from '../middleware/auth.ts';
 import type { User, AuthTokenPayload } from '../types/index.ts';
-import { supabaseService } from '../db/supabase.ts';
+import { firebaseService } from '../db/firebase.ts';
 import { ReferralService } from '../services/referralService.ts';
 
 // Utilitário de normalização e validação de números moçambicanos
@@ -87,30 +87,20 @@ export class AuthController {
         return;
       }
 
-      // 3. Verificação de Duplicidade diretamente no Supabase profiles
-      const supabase = supabaseService.getClient();
-      if (!supabase) {
-        console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend.');
-        res.status(503).json({ error: 'Serviço de base de dados indisponível. Supabase não configurado no servidor.' });
-        return;
-      }
+      // 3. Verificação de Duplicidade
+      if (firebaseService.isAvailable()) {
+        const dbFirestore = firebaseService.getDb()!;
+        const phoneVariations = [cleanDigits, formattedPhone, phoneNorm.formattedPhone];
+        const usersRef = dbFirestore.collection('users');
+        const phoneCheck = await usersRef.where('phone', 'in', phoneVariations).limit(1).get();
 
-      // Busca robusta por variações do número (com e sem prefixo, com e sem espaços)
-      const { data: existingProfiles, error: checkError } = await supabase
-        .from('profiles')
-        .select('id, phone')
-        .or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${phoneNorm.formattedPhone}%`)
-        .limit(1);
-
-      if (checkError) {
-        console.error('[Auth Register] Erro ao verificar duplicidade no Supabase:', checkError);
-        res.status(500).json({ error: `Erro na verificação de conta: ${checkError.message}` });
-        return;
-      }
-
-      if (existingProfiles && existingProfiles.length > 0) {
-        res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-        return;
+        if (!phoneCheck.empty) {
+          res.status(409).json({ error: 'Este número de telefone já está cadastrado no sistema.' });
+          return;
+        }
+      } else {
+        console.warn('[Auth Register] Firebase indisponível, a usar verificação de memória.');
+        // Memória já foi verificada em passo anterior (passo 2, linha 85), mas garante consistência
       }
 
       // Gerar caixa postal interna se o email não tiver sido fornecido
@@ -142,29 +132,35 @@ export class AuthController {
         if (inviterInMemory) {
           referredBy = inviterInMemory.id;
           console.log('[Auth Register] Inviter found in memory:', referredBy);
-        } else {
-          // Busca robusta: por código exato ou por telefone (removendo espaços)
-          // Nota: PostgREST .or não suporta funções complexas, então buscamos por ilike no código e no telefone
-          const { data: inviterProfile, error: refError } = await supabase
-            .from('profiles')
-            .select('id')
-            .or(`referral_code.eq.${cleanRef},phone.ilike.%${cleanRefDigits || 'NOT_A_PHONE'}%`)
-            .maybeSingle();
-
-          if (refError) {
-            console.warn('[Auth Register] Erro ao procurar referenciador (ignorado):', refError.message);
-          } else if (inviterProfile) {
-            referredBy = inviterProfile.id;
-            console.log('[Auth Register] Inviter found in Supabase:', referredBy);
+        } else if (firebaseService.isAvailable()) {
+          // Busca no Firestore
+          const dbFirestore = firebaseService.getDb()!;
+          const usersRef = dbFirestore.collection('users');
+          const inviterCheck = await usersRef.where('referralCode', '==', cleanRef).limit(1).get();
+          if (!inviterCheck.empty) {
+            referredBy = inviterCheck.docs[0].id;
+            console.log('[Auth Register] Inviter found in Firebase:', referredBy);
           } else {
-            console.log('[Auth Register] Inviter not found for code:', cleanRef);
+            // Tentar por telefone
+            const inviterPhoneCheck = await usersRef.where('phone', 'in', [cleanRefDigits, `+258${cleanRefDigits}`]).limit(1).get();
+            if (!inviterPhoneCheck.empty) {
+              referredBy = inviterPhoneCheck.docs[0].id;
+              console.log('[Auth Register] Inviter found by phone in Firebase:', referredBy);
+            }
           }
         }
       }
 
       // 5. Geração de código de indicação individual único
       let generatedReferralCode = `ZONA${cleanDigits}`;
-      if (db.getUserByReferralCode(generatedReferralCode)) {
+      let isUnique = !db.getUserByReferralCode(generatedReferralCode);
+      if (isUnique && firebaseService.isAvailable()) {
+          const dbFirestore = firebaseService.getDb()!;
+          const codeCheck = await dbFirestore.collection('users').where('referralCode', '==', generatedReferralCode).limit(1).get();
+          if (!codeCheck.empty) isUnique = false;
+      }
+      
+      if (!isUnique) {
         generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       }
 
@@ -187,77 +183,62 @@ export class AuthController {
         updatedAt: new Date().toISOString(),
       };
 
-      // 6. Gravação primária direta em public.profiles
-      // Incluímos email e password_hash se a tabela os tiver (conforme verificado via inspeção)
-      console.log('[Auth Register] Gravando perfil no Supabase...', { id: newUser.id, phone: newUser.phone });
-      const { error: insertError } = await supabase
-        .from('profiles')
-        .insert({
-          id: newUser.id,
-          name: newUser.name,
-          phone: newUser.phone,
-          email: newUser.email,
-          password_hash: newUser.passwordHash,
-          role: assignedRole,
-          status: assignedStatus,
-          balance: initialBalance,
-          referral_code: newUser.referralCode,
-          referred_by: referredBy,
-          created_at: newUser.createdAt,
-          updated_at: newUser.updatedAt,
-        });
-
-      if (insertError) {
-        console.error('[Auth Register] Erro Supabase INSERT profiles:', {
-          code: insertError.code,
-          message: insertError.message,
-          details: insertError.details,
-          hint: insertError.hint,
-          payload: { id: newUser.id, phone: newUser.phone, ref: newUser.referralCode }
-        });
-        
-        if (insertError.code === '23505') {
-          // Diferenciar se foi telefone ou código de indicação
-          const isReferralDup = insertError.message?.includes('referral_code') || insertError.details?.includes('referral_code');
-          res.status(409).json({ 
-            error: isReferralDup ? 'Erro interno na geração do código de convite. Tente novamente.' : 'Este número de telefone já está cadastrado.',
-            code: 'DUPLICATE_ENTRY',
-            target: isReferralDup ? 'referral_code' : 'phone'
-          });
-        } else if (insertError.code === '23503') {
-          res.status(400).json({ error: 'Referenciador não encontrado ou inválido no sistema central.' });
-        } else {
-          res.status(500).json({ 
-            error: `Falha na persistência de dados: ${insertError.message}`,
-            details: insertError.details,
-            code: insertError.code,
-            hint: insertError.hint
-          });
+      // 6. Gravação primária
+      console.log('[Auth Register] Gravando perfil...', { id: newUser.id, phone: newUser.phone });
+      
+      // Sincronizar com Firebase se possível
+      if (firebaseService.isAvailable()) {
+        try {
+          await firebaseService.syncUser(newUser);
+          const firebaseAuth = firebaseService.getAuth();
+          if (firebaseAuth) {
+            try {
+              await firebaseAuth.createUser({
+                uid: newUser.id,
+                phoneNumber: newUser.phone,
+                displayName: newUser.name,
+                email: newUser.email,
+                password: password,
+              });
+            } catch (authErr: any) {
+              console.warn('[Auth Register] Aviso ao criar no Firebase Auth:', authErr.message);
+            }
+          }
+        } catch (insertError: any) {
+          console.error('[Auth Register] Erro Firebase Firestore sync:', insertError);
+          // Permite continuar para salvar em memória, mas avisa
         }
-        return;
       }
+
 
       console.log('[Auth Register] Perfil gravado com sucesso.');
-
-      // 8. Salvar credenciais seguras
-      try {
-        await supabaseService.saveUserCredential(newUser.id, {
-          phone: newUser.phone,
-          email: newUser.email,
-          passwordHash: newUser.passwordHash,
-        });
-      } catch (vaultErr: any) {
-        console.error('[Auth Register] Erro ao salvar cofre de credenciais:', vaultErr);
-        // Não bloqueia o cadastro se falhar apenas o cofre secundário, 
-        // mas em produção isso seria crítico.
-      }
 
       // 9. Confirmar na memória local
       db.users.set(userId, newUser);
 
       // Relacionamento de convite
       if (referredBy) {
-        const inviter = db.users.get(referredBy) || (await supabaseService.findUserByIdentifier(referredBy)) || undefined;
+        // Tenta buscar o referenciador
+        let inviter = db.users.get(referredBy);
+        if (!inviter) {
+          const inviterDoc = await usersRef.doc(referredBy).get();
+          if (inviterDoc.exists) {
+            const d = inviterDoc.data()!;
+            inviter = {
+              id: d.id,
+              name: d.name,
+              phone: d.phone,
+              email: d.email,
+              passwordHash: '',
+              role: d.role,
+              isBlocked: d.status === 'BLOCKED',
+              referralCode: d.referralCode,
+              createdAt: d.createdAt,
+              updatedAt: d.updatedAt
+            };
+          }
+        }
+
         if (inviter) {
           db.addReferral({
             id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
@@ -327,11 +308,39 @@ export class AuthController {
     
     let user = db.getUserByIdentifier(identifier);
 
-    // Fallback to Supabase if not in memory
-    if (!user && supabaseService.isAvailable()) {
-      console.log(`[Auth] Utilizador ${identifier} não encontrado em memória. A procurar no Supabase...`);
-      user = (await supabaseService.findUserByIdentifier(identifier)) || undefined;
-      if (user) {
+    // Fallback to Firebase if not in memory
+    if (!user && firebaseService.isAvailable()) {
+      console.log(`[Auth] Utilizador ${identifier} não encontrado em memória. A procurar no Firebase...`);
+      const dbFirestore = firebaseService.getDb()!;
+      const cleanDigits = identifier.replace(/\D/g, '');
+      
+      let query;
+      if (identifier.includes('@')) {
+        query = dbFirestore.collection('users').where('email', '==', identifier).limit(1);
+      } else if (cleanDigits.length >= 8) {
+        query = dbFirestore.collection('users').where('phone', 'in', [identifier, `+258${cleanDigits.slice(-9)}`]).limit(1);
+      } else {
+        query = dbFirestore.collection('users').where('id', '==', identifier).limit(1);
+      }
+
+      const snap = await query.get();
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        // Nota: no Firebase guardamos o hash no doc se não estivermos a usar Auth nativo para tudo
+        // Mas para migração segura, vamos tentar obter do doc
+        user = {
+          id: data.id,
+          name: data.name,
+          phone: data.phone,
+          email: data.email,
+          passwordHash: data.passwordHash || '', // Idealmente migrado do Supabase ou gerado no primeiro login
+          role: data.role,
+          isBlocked: data.status === 'BLOCKED',
+          referralCode: data.referralCode,
+          referredBy: data.referredBy,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        };
         db.users.set(user.id, user);
         await WalletService.getWallet(user.id);
       }
@@ -407,13 +416,27 @@ export class AuthController {
 
     let user = db.users.get(req.user.userId);
     
-    // Resiliency: If user not in memory (server restart), pull from Supabase
-    if (!user && supabaseService.isAvailable()) {
-      console.log(`[Auth] Utilizador ${req.user.userId} não encontrado em memória. A tentar recuperar do Supabase...`);
-      const supabaseUser = await supabaseService.findUserById(req.user.userId);
-      if (supabaseUser) {
-        db.users.set(supabaseUser.id, supabaseUser);
-        user = supabaseUser;
+    // Resiliency: If user not in memory (server restart), pull from Firebase
+    if (!user && firebaseService.isAvailable()) {
+      console.log(`[Auth] Utilizador ${req.user.userId} não encontrado em memória. A tentar recuperar do Firebase...`);
+      const dbFirestore = firebaseService.getDb()!;
+      const doc = await dbFirestore.collection('users').doc(req.user.userId).get();
+      if (doc.exists) {
+        const data = doc.data()!;
+        user = {
+          id: data.id,
+          name: data.name,
+          phone: data.phone,
+          email: data.email,
+          passwordHash: data.passwordHash || '',
+          role: data.role,
+          isBlocked: data.status === 'BLOCKED',
+          referralCode: data.referralCode,
+          referredBy: data.referredBy,
+          createdAt: data.createdAt,
+          updatedAt: data.updatedAt
+        };
+        db.users.set(user.id, user);
         // Also ensure wallet is in memory
         await WalletService.getWallet(user.id);
       }

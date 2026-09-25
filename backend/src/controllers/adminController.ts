@@ -15,6 +15,7 @@ import {
   balanceAdjustmentSchema,
 } from '../validators/schemas.ts';
 import { Money } from '../utils/money.ts';
+import { firebaseService } from '../db/firebase.ts';
 import { supabaseService } from '../db/supabase.ts';
 import { settingsService } from '../services/settingsService.ts';
 import { RiskService } from '../services/riskService.ts';
@@ -24,38 +25,93 @@ import { AIService } from '../services/aiService.ts';
 
 export class AdminController {
   static async getDashboardStats(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const client = supabaseService.getClient();
-    if (!client) {
-      // Fallback or error
-      res.status(503).json({ error: 'Serviço de dados indisponível' });
+    if (!firebaseService.isAvailable()) {
+      // In-memory fallback if Firebase is not available
+      const users = Array.from(db.users.values()).filter((u) => u.role === 'USER');
+      const matches = Array.from(db.matches.values());
+      const activeMatches = matches.filter((m) => m.status === 'OPEN').length;
+      const finishedMatches = matches.filter((m) => m.status === 'FINISHED').length;
+      const bets = Array.from(db.bets.values());
+      const pendingBets = bets.filter((b) => b.status === 'PENDING').length;
+      const wonBets = bets.filter((b) => b.status === 'WON').length;
+      const lostBets = bets.filter((b) => b.status === 'LOST').length;
+      const voidBets = bets.filter((b) => b.status === 'VOID').length;
+      const totalBetVolume = bets.reduce((acc, b) => acc + b.stake, 0);
+      const totalDisbursedPayout = bets.filter((b) => b.status === 'WON').reduce((acc, b) => acc + b.potentialReturn, 0);
+      const totalUsersBalance = Array.from(db.wallets.values()).reduce((acc, w) => acc + w.balance, 0);
+      const allTransactions = db.transactions;
+      const totalDepositsVolume = allTransactions.filter((tx) => tx.type === 'DEPOSIT').reduce((acc, tx) => acc + tx.amount, 0);
+      const totalWithdrawalsVolume = allTransactions.filter((tx) => tx.type === 'WITHDRAWAL').reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+      const todayStr = new Date().toISOString().split('T')[0];
+      const wageredToday = bets.filter((b) => b.createdAt.startsWith(todayStr)).reduce((acc, b) => acc + b.stake, 0);
+      const paidOutToday = bets.filter((b) => b.status === 'WON' && b.settledAt?.startsWith(todayStr)).reduce((acc, b) => acc + b.potentialReturn, 0);
+      const depositsToday = allTransactions.filter((tx) => tx.type === 'DEPOSIT' && tx.createdAt.startsWith(todayStr)).reduce((acc, tx) => acc + tx.amount, 0);
+      const withdrawalsToday = allTransactions.filter((tx) => tx.type === 'WITHDRAWAL' && tx.createdAt.startsWith(todayStr)).reduce((acc, tx) => acc + Math.abs(tx.amount), 0);
+      const houseProfit = totalBetVolume - totalDisbursedPayout;
+      const houseProfitToday = wageredToday - paidOutToday;
+      const profitMarginPercent = totalBetVolume > 0 ? Math.round(((houseProfit / totalBetVolume) * 100) * 10) / 10 : 0;
+      const houseLiquidBalance = Math.max(0, totalDepositsVolume - totalWithdrawalsVolume);
+
+      res.status(200).json({
+        stats: {
+          totalUsers: users.length,
+          activeMatches,
+          finishedMatches,
+          pendingBets,
+          wonBets,
+          lostBets,
+          voidBets,
+          totalBetVolume,
+          totalDisbursedPayout,
+          totalTransactions: allTransactions.length,
+          houseBalance: houseLiquidBalance,
+          totalUsersBalance,
+          wageredToday,
+          paidOutToday,
+          houseProfit,
+          houseProfitToday,
+          profitMarginPercent,
+          totalDepositsVolume,
+          totalWithdrawalsVolume,
+          depositsToday,
+          withdrawalsToday,
+          dailyReports: [],
+        },
+      });
       return;
     }
 
+    const dbFirestore = firebaseService.getDb()!;
+
     try {
       // 1. Basic counts
-      const { count: totalUsers } = await client.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'USER');
-      const { count: activeMatches } = await client.from('matches').select('*', { count: 'exact', head: true }).eq('status', 'PRE_MATCH');
-      const { count: finishedMatches } = await client.from('matches').select('*', { count: 'exact', head: true }).eq('status', 'FINISHED');
+      const usersSnap = await dbFirestore.collection('users').where('role', '==', 'USER').get();
+      const totalUsers = usersSnap.size;
+      
+      const activeMatchesSnap = await dbFirestore.collection('matches').where('status', '==', 'OPEN').get();
+      const activeMatches = activeMatchesSnap.size;
+
+      const finishedMatchesSnap = await dbFirestore.collection('matches').where('status', '==', 'FINISHED').get();
+      const finishedMatches = finishedMatchesSnap.size;
 
       // 2. Bet stats
-      const { data: betStats } = await client.from('bets').select('status, total_stake, potential_return, created_at, settled_at');
-      const allBets = betStats || [];
+      const betsSnap = await dbFirestore.collection('bets').get();
+      const allBets = betsSnap.docs.map(doc => doc.data());
       
       const pendingBets = allBets.filter(b => b.status === 'PENDING').length;
       const wonBets = allBets.filter(b => b.status === 'WON').length;
       const lostBets = allBets.filter(b => b.status === 'LOST').length;
       const voidBets = allBets.filter(b => b.status === 'VOID').length;
 
-      let totalBetVolume = allBets.reduce((acc, b) => acc + Number(b.total_stake), 0);
-      let totalDisbursedPayout = allBets.filter(b => b.status === 'WON').reduce((acc, b) => acc + Number(b.potential_return), 0);
+      let totalBetVolume = allBets.reduce((acc, b) => acc + Number(b.stake), 0);
+      let totalDisbursedPayout = allBets.filter(b => b.status === 'WON').reduce((acc, b) => acc + Number(b.potentialReturn), 0);
 
-      // 3. Financial stats from profiles (total user balance)
-      const { data: balanceData } = await client.from('profiles').select('balance');
-      const totalUsersBalance = (balanceData || []).reduce((acc, p) => acc + Number(p.balance), 0);
+      // 3. Financial stats from users (total user balance)
+      const totalUsersBalance = usersSnap.docs.reduce((acc, doc) => acc + Number(doc.data().balance || 0), 0);
 
       // 4. Transaction volumes
-      const { data: txData } = await client.from('transactions').select('*');
-      const allTransactions = txData || [];
+      const txSnap = await dbFirestore.collection('transactions').get();
+      const allTransactions = txSnap.docs.map(doc => doc.data());
 
       let totalDepositsVolume = allTransactions.filter(tx => tx.type === 'DEPOSIT').reduce((acc, tx) => acc + Number(tx.amount), 0);
       let totalWithdrawalsVolume = allTransactions.filter(tx => tx.type === 'WITHDRAWAL').reduce((acc, tx) => acc + Math.abs(Number(tx.amount)), 0);
@@ -63,10 +119,10 @@ export class AdminController {
       const todayStr = new Date().toISOString().split('T')[0];
       
       // Today's metrics
-      const wageredToday = allBets.filter(b => b.created_at.startsWith(todayStr)).reduce((acc, b) => acc + Number(b.total_stake), 0);
-      const paidOutToday = allBets.filter(b => b.status === 'WON' && b.settled_at?.startsWith(todayStr)).reduce((acc, b) => acc + Number(b.potential_return), 0);
-      const depositsToday = allTransactions.filter(tx => tx.type === 'DEPOSIT' && tx.created_at.startsWith(todayStr)).reduce((acc, tx) => acc + Number(tx.amount), 0);
-      const withdrawalsToday = allTransactions.filter(tx => tx.type === 'WITHDRAWAL' && tx.created_at.startsWith(todayStr)).reduce((acc, tx) => acc + Math.abs(Number(tx.amount)), 0);
+      const wageredToday = allBets.filter(b => b.createdAt.startsWith(todayStr)).reduce((acc, b) => acc + Number(b.stake), 0);
+      const paidOutToday = allBets.filter(b => b.status === 'WON' && b.settledAt?.startsWith(todayStr)).reduce((acc, b) => acc + Number(b.potentialReturn), 0);
+      const depositsToday = allTransactions.filter(tx => tx.type === 'DEPOSIT' && tx.createdAt.startsWith(todayStr)).reduce((acc, tx) => acc + Number(tx.amount), 0);
+      const withdrawalsToday = allTransactions.filter(tx => tx.type === 'WITHDRAWAL' && tx.createdAt.startsWith(todayStr)).reduce((acc, tx) => acc + Math.abs(Number(tx.amount)), 0);
 
       const houseProfit = totalBetVolume - totalDisbursedPayout;
       const houseProfitToday = wageredToday - paidOutToday;
@@ -83,18 +139,18 @@ export class AdminController {
       }
 
       allBets.forEach(b => {
-        const ds = b.created_at.split('T')[0];
+        const ds = b.createdAt.split('T')[0];
         if (dailyMap.has(ds)) {
           const item = dailyMap.get(ds);
-          item.wagered += Number(b.total_stake);
+          item.wagered += Number(b.stake);
           item.betsCount++;
-          if (b.status === 'WON') item.paidOut += Number(b.potential_return);
+          if (b.status === 'WON') item.paidOut += Number(b.potentialReturn);
           item.profit = item.wagered - item.paidOut;
         }
       });
 
       allTransactions.forEach(tx => {
-        const ds = tx.created_at.split('T')[0];
+        const ds = tx.createdAt.split('T')[0];
         if (dailyMap.has(ds)) {
           const item = dailyMap.get(ds);
           if (tx.type === 'DEPOSIT') item.deposits += Number(tx.amount);
@@ -106,9 +162,9 @@ export class AdminController {
 
       res.status(200).json({
         stats: {
-          totalUsers: totalUsers || 0,
-          activeMatches: activeMatches || 0,
-          finishedMatches: finishedMatches || 0,
+          totalUsers,
+          activeMatches,
+          finishedMatches,
           pendingBets,
           wonBets,
           lostBets,
@@ -131,7 +187,7 @@ export class AdminController {
         },
       });
     } catch (err: any) {
-      res.status(500).json({ error: err.message || 'Erro ao obter estatísticas' });
+      res.status(500).json({ error: err.message || 'Erro ao obter estatísticas do Firebase' });
     }
   }
 
@@ -230,6 +286,7 @@ export class AdminController {
     );
 
     supabaseService.syncUserRealtime(newUser).catch(console.error);
+    firebaseService.syncUser(newUser).catch(console.error);
 
     res.status(201).json({
       message: `Jogador "${newUser.name}" cadastrado com sucesso!`,
@@ -404,38 +461,36 @@ export class AdminController {
   static async getUsers(req: AuthenticatedRequest, res: Response): Promise<void> {
     const host = req.get('host') || 'localhost:3000';
     const proto = (req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http';
-    const client = supabaseService.getClient();
-
-    if (client) {
+    
+    if (firebaseService.isAvailable()) {
       try {
-        const { data: profiles, error } = await client
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const dbFirestore = firebaseService.getDb()!;
+        const snap = await dbFirestore.collection('users').orderBy('createdAt', 'desc').get();
 
-        if (!error && profiles && profiles.length > 0) {
-          const users = profiles.map((p) => {
-            const code = p.referral_code || `ZONA${(p.phone || '').replace(/\D/g, '').slice(-9)}`;
-            const referralLink = p.referral_link || `${proto}://${host}/?ref=${code}`;
+        if (!snap.empty) {
+          const users = snap.docs.map((doc) => {
+            const p = doc.data();
+            const code = p.referralCode || `ZONA${(p.phone || '').replace(/\D/g, '').slice(-9)}`;
+            const referralLink = p.referralLink || `${proto}://${host}/?ref=${code}`;
             return {
               id: p.id,
               name: p.name,
-              email: p.email || `${(p.phone || '').replace(/\D/g, '')}@zonabet.mz`,
+              email: p.email,
               phone: p.phone,
               role: p.role,
               isBlocked: p.status === 'BLOCKED',
               balance: Number(p.balance || 0),
               referralCode: code,
               referralLink,
-              referredBy: p.referred_by,
-              createdAt: p.created_at,
+              referredBy: p.referredBy,
+              createdAt: p.createdAt,
             };
           });
           res.status(200).json({ users });
           return;
         }
       } catch (err) {
-        console.warn('[Admin getUsers Supabase Error]:', err);
+        console.warn('[Admin getUsers Firebase Error]:', err);
       }
     }
 
@@ -499,8 +554,9 @@ export class AdminController {
       req.ip
     );
 
-    // Real-time synchronization with Supabase
+    // Real-time synchronization
     supabaseService.syncUserRealtime(targetUser).catch(console.error);
+    firebaseService.syncUser(targetUser).catch(console.error);
 
     res.status(200).json({
       message: `Utilizador ${targetUser.isBlocked ? 'bloqueado' : 'desbloqueado'} com sucesso.`,
@@ -576,39 +632,32 @@ export class AdminController {
   }
 
   static async getAllTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
-    const client = supabaseService.getClient();
-    if (client) {
-      let { data, error } = await client
-        .from('transactions')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      if (error) {
-        const alt = await client
-          .from('wallet_transactions')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(100);
-        data = alt.data;
-        error = alt.error;
-      }
-      
-      if (!error && data) {
-        const transactions = data.map(tx => ({
-          id: tx.id,
-          userId: tx.user_id,
-          type: tx.type === 'BET_PLACEMENT' ? 'BET' : tx.type === 'BET_WIN' ? 'WIN' : tx.type,
-          amount: Number(tx.amount),
-          previousBalance: Number(tx.prev_balance ?? tx.balance_before ?? 0),
-          nextBalance: Number(tx.next_balance ?? tx.balance_after ?? 0),
-          reference: tx.reference_id ?? tx.reference ?? '',
-          description: tx.description ?? tx.notes ?? '',
-          status: 'COMPLETED',
-          createdAt: tx.created_at,
-        }));
-        res.status(200).json({ transactions });
-        return;
+    if (firebaseService.isAvailable()) {
+      try {
+        const dbFirestore = firebaseService.getDb()!;
+        const snap = await dbFirestore.collection('transactions').orderBy('createdAt', 'desc').limit(100).get();
+        
+        if (!snap.empty) {
+          const transactions = snap.docs.map(doc => {
+            const tx = doc.data();
+            return {
+              id: tx.id,
+              userId: tx.userId,
+              type: tx.type,
+              amount: Number(tx.amount),
+              previousBalance: Number(tx.prevBalance || 0),
+              nextBalance: Number(tx.nextBalance || 0),
+              reference: tx.referenceId || '',
+              description: tx.description || '',
+              status: 'COMPLETED',
+              createdAt: tx.createdAt,
+            };
+          });
+          res.status(200).json({ transactions });
+          return;
+        }
+      } catch (err) {
+        console.warn('[Admin getAllTransactions Firebase Error]:', err);
       }
     }
     const transactions = [...db.transactions].reverse();
@@ -691,8 +740,9 @@ export class AdminController {
       req.ip
     );
 
-    // Real-time synchronization with Supabase
+    // Real-time synchronization
     supabaseService.syncUserRealtime(targetUser).catch(console.error);
+    firebaseService.syncUser(targetUser).catch(console.error);
 
     res.status(200).json({
       message: `Palavra-passe do utilizador ${targetUser.email} redefinida com sucesso para "${newPassword}".`,
@@ -708,29 +758,35 @@ export class AdminController {
 
   static async getUserTransactions(req: AuthenticatedRequest, res: Response): Promise<void> {
     const { id } = req.params;
-    const client = supabaseService.getClient();
-    if (client) {
-      const { data, error } = await client
-        .from('wallet_transactions')
-        .select('*')
-        .eq('user_id', id)
-        .order('created_at', { ascending: false });
-      
-      if (!error && data) {
-        const transactions = data.map(tx => ({
-          id: tx.id,
-          userId: tx.user_id,
-          type: tx.type,
-          amount: Number(tx.amount),
-          previousBalance: Number(tx.balance_before),
-          nextBalance: Number(tx.balance_after),
-          reference: tx.reference,
-          description: tx.notes,
-          status: tx.status,
-          createdAt: tx.created_at,
-        }));
-        res.status(200).json({ transactions });
-        return;
+    if (firebaseService.isAvailable()) {
+      try {
+        const dbFirestore = firebaseService.getDb()!;
+        const snap = await dbFirestore.collection('transactions')
+          .where('userId', '==', id)
+          .orderBy('createdAt', 'desc')
+          .get();
+        
+        if (!snap.empty) {
+          const transactions = snap.docs.map(doc => {
+            const tx = doc.data();
+            return {
+              id: tx.id,
+              userId: tx.userId,
+              type: tx.type,
+              amount: Number(tx.amount),
+              previousBalance: Number(tx.prevBalance || 0),
+              nextBalance: Number(tx.nextBalance || 0),
+              reference: tx.referenceId || '',
+              description: tx.description || '',
+              status: 'COMPLETED',
+              createdAt: tx.createdAt,
+            };
+          });
+          res.status(200).json({ transactions });
+          return;
+        }
+      } catch (err) {
+        console.warn('[Admin getUserTransactions Firebase Error]:', err);
       }
     }
     const userTransactions = db.transactions
@@ -806,6 +862,7 @@ export class AdminController {
           bet.settledAt = new Date().toISOString();
           
           supabaseService.syncBetRealtime(bet).catch(console.error);
+          firebaseService.syncBet(bet).catch(console.error);
         }
       }
     }
@@ -823,8 +880,12 @@ export class AdminController {
       req.ip
     );
 
-    // Real-time synchronization with Supabase
-    supabaseService.deleteMatchRealtime(id).catch(console.error);
+    // Real-time synchronization with Firebase
+    // Note: firebaseService doesn't have deleteMatch yet, we can add it or just call db directly
+    const dbFirestore = firebaseService.getDb();
+    if (dbFirestore) {
+      dbFirestore.collection('matches').doc(id).delete().catch(console.error);
+    }
 
     res.status(200).json({
       message: `Jogo "${match.homeTeam} vs ${match.awayTeam}" excluído com sucesso do sistema.`,
