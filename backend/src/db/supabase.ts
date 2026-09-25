@@ -46,22 +46,42 @@ class SupabaseService {
   }
 
   private decryptVault(encryptedString: string): any {
-    try {
-      const parts = encryptedString.split(':');
-      if (parts.length !== 3) return null;
-      const [ivHex, tagHex, cipherHex] = parts;
-      const key = this.getVaultKey();
-      const iv = Buffer.from(ivHex, 'hex');
-      const tag = Buffer.from(tagHex, 'hex');
-      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-      decipher.setAuthTag(tag);
-      let decrypted = decipher.update(cipherHex, 'hex', 'utf8');
-      decrypted += decipher.final('utf8');
-      return JSON.parse(decrypted);
-    } catch (err) {
-      console.warn('[Supabase Vault] Erro ao desencriptar cofre de credenciais:', err);
-      return null;
+    const tryDecrypt = (secret: string) => {
+      try {
+        const parts = encryptedString.split(':');
+        if (parts.length !== 3) return null;
+        const [ivHex, tagHex, cipherHex] = parts;
+        const key = crypto.createHash('sha256').update(secret).digest();
+        const iv = Buffer.from(ivHex, 'hex');
+        const tag = Buffer.from(tagHex, 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(tag);
+        let decrypted = decipher.update(cipherHex, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return JSON.parse(decrypted);
+      } catch (err) {
+        return null;
+      }
+    };
+
+    const primarySecret = config.jwtSecret || process.env.JWT_SECRET || 'zonabet-auth-internal-secure-key';
+    let result = tryDecrypt(primarySecret);
+
+    if (!result) {
+      // Tentar segredo de desenvolvimento como fallback
+      result = tryDecrypt('dev_secret_only_for_local_development_do_not_use_in_prod');
     }
+
+    if (!result && primarySecret !== 'zonabet-auth-internal-secure-key') {
+      // Tentar segredo interno padrão como última alternativa
+      result = tryDecrypt('zonabet-auth-internal-secure-key');
+    }
+
+    if (!result) {
+      console.warn('[Supabase Vault] Falha total ao desencriptar cofre com todos os segredos conhecidos.');
+    }
+
+    return result;
   }
 
   public async saveUserCredential(
@@ -207,8 +227,8 @@ class SupabaseService {
         id: data.id,
         phone: data.phone,
         name: data.name,
-        email: cred?.email || `${cleanPhone}@zonabet.mz`,
-        passwordHash: cred?.passwordHash || '',
+        email: data.email || cred?.email || `${cleanPhone}@zonabet.mz`,
+        passwordHash: data.password_hash || cred?.passwordHash || '',
         role: (data.role as 'USER' | 'ADMIN') || 'USER',
         isBlocked: data.status === 'BLOCKED',
         referralCode: data.referral_code || `ZONA${cleanPhone.slice(-9)}`,
@@ -540,8 +560,8 @@ class SupabaseService {
         id: data.id,
         phone: data.phone,
         name: data.name,
-        email: cred?.email || `${cleanPhone}@zonabet.mz`,
-        passwordHash: cred?.passwordHash || '',
+        email: data.email || cred?.email || `${cleanPhone}@zonabet.mz`,
+        passwordHash: data.password_hash || cred?.passwordHash || '',
         role: (data.role as 'USER' | 'ADMIN') || 'USER',
         isBlocked: data.status === 'BLOCKED',
         referralCode: data.referral_code || `ZONA${cleanPhone.slice(-9)}`,

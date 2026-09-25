@@ -46,23 +46,31 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     
     if (!message) {
       if (response.status === 404) {
-        message = 'Serviço temporariamente indisponível (404).';
+        message = `Serviço não encontrado (404) em ${endpoint}. Verifique a rota no backend.`;
       } else if (response.status === 504) {
-        message = 'O servidor demorou muito a responder. Tente novamente.';
+        message = 'O servidor demorou muito a responder (Gateway Timeout). Tente novamente.';
       } else if (response.status === 401) {
         message = 'Sessão expirada ou credenciais inválidas.';
       } else if (response.status === 403) {
-        message = 'Acesso negado. Não tem permissões para esta ação.';
+        message = 'Acesso negado. Você não tem permissão para realizar esta operação.';
+      } else if (response.status === 409) {
+        message = 'Conflito de dados: O registo já existe ou os dados são duplicados.';
       } else if (response.status >= 500) {
-        message = `Erro interno no servidor (${response.status}).`;
+        message = `Erro interno no servidor (${response.status}). ${data.error || ''}`.trim();
       } else {
-        message = `Ocorreu um erro no pedido (Status: ${response.status}).`;
+        message = `Ocorreu um erro no pedido (Status: ${response.status}). Por favor, contacte o suporte.`;
       }
     }
 
     // Se houver detalhes ou hint (comum em erros Supabase repassados), adicionar à mensagem se em desenvolvimento
-    if (data.details || data.hint) {
-      console.warn('[API Error Details]:', data.details, data.hint);
+    if (data.details || data.hint || data.code) {
+      console.error('[API Diagnostic Info]:', {
+        status: response.status,
+        code: data.code,
+        details: data.details,
+        hint: data.hint,
+        endpoint
+      });
     }
 
     throw new Error(message);

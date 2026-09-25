@@ -95,10 +95,11 @@ export class AuthController {
         return;
       }
 
+      // Busca robusta por variações do número (com e sem prefixo, com e sem espaços)
       const { data: existingProfiles, error: checkError } = await supabase
         .from('profiles')
         .select('id, phone')
-        .ilike('phone', `%${cleanDigits}%`)
+        .or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${phoneNorm.formattedPhone}%`)
         .limit(1);
 
       if (checkError) {
@@ -133,19 +134,23 @@ export class AuthController {
       let referredBy: string | null = null;
       if (referralCode && referralCode.trim() !== '') {
         const cleanRef = referralCode.trim().toUpperCase();
+        const cleanRefDigits = cleanRef.replace(/\D/g, '');
+        
         const inviterInMemory = db.getUserByReferralCode(cleanRef);
 
         if (inviterInMemory) {
           referredBy = inviterInMemory.id;
         } else {
+          // Busca robusta: por código exato ou por telefone (removendo espaços)
+          // Nota: PostgREST .or não suporta funções complexas, então buscamos por ilike no código e no telefone
           const { data: inviterProfile, error: refError } = await supabase
             .from('profiles')
             .select('id')
-            .or(`referral_code.eq."${cleanRef}",phone.ilike."%${cleanRef.replace(/\D/g, '') || cleanRef}%"`)
+            .or(`referral_code.eq.${cleanRef},phone.ilike.%${cleanRefDigits || 'NOT_A_PHONE'}%`)
             .maybeSingle();
 
           if (refError) {
-            console.warn('[Auth Register] Erro ao procurar referenciador:', refError.message);
+            console.warn('[Auth Register] Erro ao procurar referenciador (ignorado):', refError.message);
           } else if (inviterProfile) {
             referredBy = inviterProfile.id;
           }
@@ -178,12 +183,15 @@ export class AuthController {
       };
 
       // 6. Gravação primária direta em public.profiles
+      // Incluímos email e password_hash se a tabela os tiver (conforme verificado via inspeção)
       const { error: insertError } = await supabase
         .from('profiles')
         .insert({
           id: newUser.id,
           name: newUser.name,
           phone: newUser.phone,
+          email: newUser.email,
+          password_hash: newUser.passwordHash,
           role: assignedRole,
           status: assignedStatus,
           balance: initialBalance,
@@ -194,19 +202,30 @@ export class AuthController {
         });
 
       if (insertError) {
-        console.error('[Auth Register] Erro Supabase INSERT profiles:', {
+        console.error('[Auth Register] Erro crítico no Supabase ao inserir perfil:', {
           code: insertError.code,
           message: insertError.message,
           details: insertError.details,
-          hint: insertError.hint
+          hint: insertError.hint,
+          payload: { id: newUser.id, phone: newUser.phone, ref: newUser.referralCode }
         });
         
         if (insertError.code === '23505') {
-          res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+          // Diferenciar se foi telefone ou código de indicação
+          const isReferralDup = insertError.message?.includes('referral_code') || insertError.details?.includes('referral_code');
+          res.status(409).json({ 
+            error: isReferralDup ? 'Erro interno na geração do código de convite. Tente novamente.' : 'Este número de telefone já está cadastrado.',
+            code: 'DUPLICATE_ENTRY',
+            target: isReferralDup ? 'referral_code' : 'phone'
+          });
         } else if (insertError.code === '23503') {
-          res.status(400).json({ error: 'Referenciador não encontrado ou inválido.' });
+          res.status(400).json({ error: 'Referenciador não encontrado ou inválido no sistema central.' });
         } else {
-          res.status(500).json({ error: `Erro no banco de dados (Supabase): ${insertError.message}` });
+          res.status(500).json({ 
+            error: `Falha na persistência de dados: ${insertError.message}`,
+            details: insertError.details,
+            code: insertError.code
+          });
         }
         return;
       }

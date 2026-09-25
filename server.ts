@@ -19,7 +19,7 @@ async function startServer() {
       console.log('[ZONABET] Supabase detectado. Iniciando sincronização de dados...');
       const result = await supabaseService.pullDataFromSupabase();
       if (result.success) {
-        console.log(`[ZONABET] Hidratação concluída: ${result.results?.users || 0} utilizadores, ${result.results?.settings || 0} configurações.`);
+        console.log(`[ZONABET] Hidratação concluída: ${result.results?.users || 0} utilizadores, ${result.results?.matches || 0} jogos, ${result.results?.settings || 0} configurações.`);
       }
     } else {
       console.log('[ZONABET] Supabase não ligado ou tabelas em falta. A usar base de dados local temporária.');
