@@ -78,7 +78,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
         await register({
           name: cleanName,
-          phone: cleanPhone.startsWith('+') ? cleanPhone : `+258 ${cleanPhone}`,
+          phone: cleanPhone,
           password,
           confirmPassword,
           referralCode: referralCode.trim() || undefined,
@@ -340,7 +340,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             disabled={loading}
             className="w-full mt-3 py-3 px-4 bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 font-black rounded-xl shadow-lg shadow-emerald-500/20 transition-all text-sm flex items-center justify-center gap-2 active:scale-98"
           >
-            {loading ? 'A processar...' : mode === 'login' ? 'Entrar na Conta' : 'Criar Conta'}
+            {loading ? (mode === 'register' ? 'Criando conta...' : 'Entrando...') : mode === 'login' ? 'Entrar na Conta' : 'Criar Conta'}
           </button>
         </form>
 

@@ -70,6 +70,22 @@ class SupabaseService {
   ): Promise<void> {
     if (!this.client) return;
     try {
+      const userCredData: UserCredential = {
+        userId,
+        phone: cred.phone,
+        email: cred.email,
+        passwordHash: cred.passwordHash,
+      };
+
+      // 1. Guardar linha individual isolada para acesso direto rápido O(1)
+      const individualEncrypted = this.encryptVault(userCredData);
+      await this.client.from('system_settings').upsert({
+        id: `cred_${userId}`,
+        config: { encrypted: individualEncrypted },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+
+      // 2. Atualizar também o vault agregado
       const { data } = await this.client
         .from('system_settings')
         .select('config')
@@ -85,13 +101,7 @@ class SupabaseService {
         }
       }
 
-      vault[userId] = {
-        userId,
-        phone: cred.phone,
-        email: cred.email,
-        passwordHash: cred.passwordHash,
-      };
-
+      vault[userId] = userCredData;
       const encrypted = this.encryptVault(vault);
       await this.client.from('system_settings').upsert({
         id: 'auth_vault',
@@ -125,14 +135,37 @@ class SupabaseService {
         }
       }
     } catch (err) {
-      console.warn('[Supabase Vault] Erro ao carregar credenciais:', err);
+      console.warn('[Supabase Vault] Erro ao carregar credenciais agregadas:', err);
     }
     return map;
   }
 
   public async getUserCredential(userId: string): Promise<UserCredential | null> {
-    const all = await this.getAllCredentials();
-    return all.get(userId) || null;
+    if (!this.client) return null;
+    try {
+      // 1. Tentar busca direta no registo individual (muito mais rápido)
+      const { data } = await this.client
+        .from('system_settings')
+        .select('config')
+        .eq('id', `cred_${userId}`)
+        .maybeSingle();
+
+      if (data && data.config) {
+        if (typeof data.config.encrypted === 'string') {
+          const decrypted = this.decryptVault(data.config.encrypted);
+          if (decrypted) return decrypted;
+        } else if (typeof data.config === 'object' && data.config.userId) {
+          return data.config as UserCredential;
+        }
+      }
+
+      // 2. Fallback para o cofre agregado
+      const all = await this.getAllCredentials();
+      return all.get(userId) || null;
+    } catch (err) {
+      console.warn('[Supabase Vault] Erro ao obter credencial do utilizador:', err);
+      return null;
+    }
   }
 
   public async findUserByIdentifier(identifier: string): Promise<User | null> {
@@ -141,10 +174,26 @@ class SupabaseService {
     const cleanDigits = trimmed.replace(/\D/g, '');
     try {
       let query = this.client.from('profiles').select('*');
-      if (trimmed.startsWith('usr-')) {
+      if (trimmed.startsWith('usr-') || trimmed.startsWith('usr_')) {
         query = query.eq('id', trimmed);
       } else if (cleanDigits.length >= 8) {
-        query = query.or(`phone.eq.${trimmed},phone.eq.+258 ${cleanDigits},phone.eq.+${cleanDigits},phone.eq.${cleanDigits}`);
+        const nineDigits = cleanDigits.slice(-9);
+        query = query.ilike('phone', `%${nineDigits}%`);
+      } else if (trimmed.includes('@')) {
+        // Como 'profiles' não possui a coluna email, localizar o utilizador pelo vault de credenciais
+        const allCreds = await this.getAllCredentials();
+        let matchedUid: string | null = null;
+        for (const [uid, cred] of allCreds.entries()) {
+          if (cred.email && cred.email.toLowerCase() === trimmed.toLowerCase()) {
+            matchedUid = uid;
+            break;
+          }
+        }
+        if (matchedUid) {
+          query = query.eq('id', matchedUid);
+        } else {
+          return null;
+        }
       } else {
         query = query.eq('name', trimmed);
       }

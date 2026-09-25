@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { db } from '../db/store.ts';
 import { config } from '../config/index.ts';
 import { registerSchema, loginSchema } from '../validators/schemas.ts';
@@ -11,6 +12,52 @@ import type { User, AuthTokenPayload } from '../types/index.ts';
 import { supabaseService } from '../db/supabase.ts';
 import { ReferralService } from '../services/referralService.ts';
 
+// Utilitário de normalização e validação de números moçambicanos
+function normalizeMozambicanPhone(rawPhone: string): {
+  isValid: boolean;
+  cleanDigits: string;
+  formattedPhone: string;
+  error?: string;
+} {
+  const digits = rawPhone.replace(/\D/g, '');
+  let nineDigits = digits;
+
+  if (digits.startsWith('258') && digits.length >= 11) {
+    nineDigits = digits.slice(3);
+  } else if (digits.length > 9) {
+    nineDigits = digits.slice(-9);
+  }
+
+  // Validação: número moçambicano deve ter 9 dígitos
+  if (nineDigits.length !== 9) {
+    return {
+      isValid: false,
+      cleanDigits: nineDigits,
+      formattedPhone: rawPhone.trim(),
+      error: 'O número de celular deve conter exatamente 9 dígitos (ex: 84 123 4567).',
+    };
+  }
+
+  // Prefixos de operadoras moçambicanas válidas (82, 83, 84, 85, 86, 87, 89)
+  const validPrefixes = ['82', '83', '84', '85', '86', '87', '89'];
+  const prefix = nineDigits.slice(0, 2);
+  if (!validPrefixes.includes(prefix)) {
+    return {
+      isValid: false,
+      cleanDigits: nineDigits,
+      formattedPhone: rawPhone.trim(),
+      error: 'Prefixo de operadora inválido. Use um contacto Vodacom (84/85), Movitel (86/87) ou Tmcel (82/83).',
+    };
+  }
+
+  const formattedPhone = `+258 ${nineDigits.slice(0, 2)} ${nineDigits.slice(2, 5)} ${nineDigits.slice(5)}`;
+  return {
+    isValid: true,
+    cleanDigits: nineDigits,
+    formattedPhone,
+  };
+}
+
 export class AuthController {
   static async register(req: Request, res: Response): Promise<void> {
     const parseResult = registerSchema.safeParse(req.body);
@@ -19,17 +66,45 @@ export class AuthController {
       return;
     }
 
-    const { name, phone, password, referralCode } = parseResult.data;
+    const { name, phone: rawPhone, password, referralCode } = parseResult.data;
     let { email } = parseResult.data;
 
-    // Check if cell phone number already exists
-    if (db.getUserByPhone(phone)) {
-      res.status(409).json({ error: 'Já existe uma conta registada com este número de celular.' });
+    // 1. Normalização do Telefone
+    const phoneNorm = normalizeMozambicanPhone(rawPhone);
+    if (!phoneNorm.isValid) {
+      res.status(400).json({ error: phoneNorm.error || 'Número de celular inválido.' });
       return;
     }
 
-    // Auto-generate internal mailbox if email not provided
-    const cleanDigits = phone.replace(/\D/g, '');
+    const cleanDigits = phoneNorm.cleanDigits;
+    const formattedPhone = phoneNorm.formattedPhone;
+
+    // 2. Verificação de Duplicidade em memória local
+    if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
+      res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+      return;
+    }
+
+    // 3. Verificação de Duplicidade diretamente no Supabase profiles
+    const supabase = supabaseService.getClient();
+    if (!supabase) {
+      console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend. SUPABASE_SERVICE_ROLE_KEY ausente.');
+      res.status(503).json({ error: 'Serviço de base de dados indisponível. Configuração do Supabase ausente no servidor.' });
+      return;
+    }
+
+    const { data: existingProfiles, error: checkError } = await supabase
+      .from('profiles')
+      .select('id, phone')
+      .ilike('phone', `%${cleanDigits}%`)
+      .limit(1);
+
+    if (!checkError && existingProfiles && existingProfiles.length > 0) {
+      res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+      return;
+    }
+
+    // Gerar caixa postal interna se o email não tiver sido fornecido
     if (!email || email.trim() === '') {
       email = `${cleanDigits}@zonabet.mz`;
     } else {
@@ -40,36 +115,62 @@ export class AuthController {
     }
 
     const passwordHash = bcrypt.hashSync(password, 10);
-    const userId = `usr-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    // Geração de ID seguro e único (UUID v4)
+    const userId = `usr-${crypto.randomUUID()}`;
 
-    // Normalize phone display with +258 if valid Mozambican 9-digit
-    let formattedPhone = phone.trim();
-    if (cleanDigits.length === 9 && !formattedPhone.startsWith('+')) {
-      formattedPhone = `+258 ${cleanDigits.slice(0, 2)} ${cleanDigits.slice(2, 5)} ${cleanDigits.slice(5)}`;
-    }
+    // REGRAS DE SEGURANÇA OBRIGATÓRIAS:
+    // Qualquer cadastro público inicia estritamente com USER, status ACTIVE e saldo 0.00
+    const assignedRole: 'USER' = 'USER';
+    const assignedStatus: 'ACTIVE' = 'ACTIVE';
+    const initialBalance = 0.00;
 
-    const isAdminEmail = (email && (email.toLowerCase() === 'isapsiqui377@gmail.com' || email.toLowerCase().includes('admin@zonabet.mz') || email.toLowerCase().includes('admin@zonabet.co.mz') || email.toLowerCase() === 'admin@example.com'));
-    const isAdminPhone = cleanDigits.includes('872344381') || cleanDigits.includes('872344380');
-    const assignedRole = (isAdminEmail || isAdminPhone) ? 'ADMIN' : 'USER';
-
-    // Process referral code if provided
-    let referredBy: string | undefined = undefined;
+    // 4. Tratamento do Código de Convite (referral_code e referred_by)
+    let referredBy: string | null = null;
     if (referralCode && referralCode.trim() !== '') {
-      const inviter = db.getUserByReferralCode(referralCode);
-      if (inviter) {
-        referredBy = inviter.id;
+      const cleanRef = referralCode.trim().toUpperCase();
+      const inviterInMemory = db.getUserByReferralCode(cleanRef);
+
+      if (inviterInMemory) {
+        // Validar se o utilizador existe na tabela profiles do Supabase para respeitar a Foreign Key
+        const { data: inviterProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('id', inviterInMemory.id)
+          .maybeSingle();
+
+        if (inviterProfile) {
+          referredBy = inviterProfile.id;
+        }
+      } else {
+        // Consultar diretamente no Supabase por referral_code ou phone
+        const { data: inviterProfile } = await supabase
+          .from('profiles')
+          .select('id')
+          .or(`referral_code.eq.${cleanRef},phone.ilike.%${cleanRef.replace(/\D/g, '') || cleanRef}%`)
+          .maybeSingle();
+
+        if (inviterProfile) {
+          referredBy = inviterProfile.id;
+        }
       }
     }
 
-    // Generate guaranteed unique individual referral code and individual link
-    const cleanDigitsOnly = cleanDigits.slice(-9);
-    let generatedReferralCode = cleanDigitsOnly.length >= 4 ? `ZONA${cleanDigitsOnly}` : `ZONA${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    // 5. Geração de código de indicação individual único e link
+    let generatedReferralCode = `ZONA${cleanDigits}`;
     if (db.getUserByReferralCode(generatedReferralCode)) {
-      let uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      const uniqueSuffix = crypto.randomBytes(2).toString('hex').toUpperCase();
       generatedReferralCode = `${generatedReferralCode}-${uniqueSuffix}`;
-      while (db.getUserByReferralCode(generatedReferralCode)) {
-        generatedReferralCode = `ZONA-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      }
+    }
+
+    // Garantir que não colide com registos existentes no Supabase
+    const { data: existingRefCode } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('referral_code', generatedReferralCode)
+      .maybeSingle();
+
+    if (existingRefCode) {
+      generatedReferralCode = `ZONA-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
     }
 
     const host = req.get('host') || 'localhost:3000';
@@ -86,40 +187,34 @@ export class AuthController {
       isBlocked: false,
       referralCode: generatedReferralCode,
       referralLink: individualReferralLink,
-      referredBy,
+      referredBy: referredBy || undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // 1. Obter cliente Supabase com SERVICE_ROLE_KEY obrigatória no backend
-    const supabase = supabaseService.getClient();
-    if (!supabase) {
-      console.error('[Auth Register] Erro de configuração: Cliente Supabase não inicializado no backend. SUPABASE_SERVICE_ROLE_KEY ausente.');
-      res.status(503).json({ error: 'Serviço de base de dados indisponível. Configuração do Supabase ausente no servidor.' });
-      return;
-    }
-
-    // 2. Gravação primária direta em public.profiles aguardando confirmação (EXATAMENTE os 10 campos)
+    // 6. Gravação primária direta em public.profiles aguardando confirmação (ESTRITAMENTE os 10 campos)
     const { error: insertError } = await supabase
       .from('profiles')
       .insert({
         id: newUser.id,
         name: newUser.name,
         phone: newUser.phone,
-        role: newUser.role,
-        status: 'ACTIVE',
-        balance: 0.00,
+        role: assignedRole,
+        status: assignedStatus,
+        balance: initialBalance,
         referral_code: newUser.referralCode,
-        referred_by: newUser.referredBy || null,
+        referred_by: referredBy,
         created_at: newUser.createdAt,
         updated_at: newUser.updatedAt,
       });
 
-    // 3. Se o INSERT falhar, abortar sem salvar em memória e sem retornar 201
+    // 7. Se o INSERT falhar, abortar imediatamente sem salvar em memória e sem retornar 201
     if (insertError) {
       console.error('[Auth Register] Falha ao persistir perfil em public.profiles:', insertError.message || insertError);
       if (insertError.code === '23505') {
-        res.status(409).json({ error: 'Já existe uma conta associada a este número de celular ou código de convite no Supabase.' });
+        res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+      } else if (insertError.code === '23503') {
+        res.status(400).json({ error: 'Código de convite inválido ou referenciador não encontrado.' });
       } else if (insertError.code === 'PGRST205' || (insertError.message && insertError.message.includes('not find the table'))) {
         res.status(500).json({ error: "A tabela 'public.profiles' ainda não existe no seu projeto Supabase. Execute o script SQL no SQL Editor do Supabase." });
       } else {
@@ -128,22 +223,22 @@ export class AuthController {
       return;
     }
 
-    // 4. Salvar credenciais seguras no cofre persistente do Supabase (sem colocar em profiles)
+    // 8. Salvar credenciais seguras no cofre persistente do Supabase (sem colocar em profiles)
     await supabaseService.saveUserCredential(newUser.id, {
       phone: newUser.phone,
       email: newUser.email,
       passwordHash: newUser.passwordHash,
     });
 
-    // 5. Somente após confirmação bem-sucedida da persistência no Supabase:
+    // 9. Somente após confirmação bem-sucedida da persistência no Supabase, registar na sessão/memória:
     db.users.set(userId, newUser);
 
-    // Record the referral relationship
+    // Registar relacionamento de convite caso exista
     if (referredBy) {
       const inviter = db.users.get(referredBy);
       if (inviter) {
         db.addReferral({
-          id: `ref-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
           inviterId: inviter.id,
           inviterName: inviter.name,
           invitedUserId: newUser.id,
@@ -156,9 +251,9 @@ export class AuthController {
       }
     }
 
-    // Initialize user wallet with 0.00 MZN
+    // Inicializar carteira com 0.00 MZN
     const wallet = await WalletService.getWallet(userId);
-    wallet.balance = 0.00;
+    wallet.balance = initialBalance;
     wallet.updatedAt = new Date().toISOString();
 
     const tokenPayload: AuthTokenPayload = {
@@ -181,7 +276,7 @@ export class AuthController {
         role: newUser.role,
         balance: wallet.balance,
         referralCode: newUser.referralCode,
-        referralLink: newUser.referralLink || `${(req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https') ? 'https' : 'http'}://${req.get('host') || 'localhost:3000'}/?ref=${newUser.referralCode}`,
+        referralLink: newUser.referralLink || individualReferralLink,
         referredBy: newUser.referredBy,
       },
     });
