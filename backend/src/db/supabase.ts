@@ -28,14 +28,28 @@ class SupabaseService {
   public init() {
     console.log('[Supabase Diagnostic] Initializing...');
 
-    const rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
-    this.url = rawUrl
-      ? rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
-      : null;
+    let rawUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || null;
 
     // Backend usa exclusivamente SUPABASE_SERVICE_ROLE_KEY (sem fallback para ANON_KEY)
     const rawKey = process.env.SUPABASE_SERVICE_ROLE_KEY ? process.env.SUPABASE_SERVICE_ROLE_KEY.trim() : null;
     this.key = rawKey;
+
+    // Se SUPABASE_URL não foi definida explicitamente, deduzir a partir do token JWT da SERVICE_ROLE_KEY
+    if (!rawUrl && this.key && this.key.includes('.')) {
+      try {
+        const parts = this.key.split('.');
+        if (parts.length >= 2) {
+          const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+          if (payload && payload.ref) {
+            rawUrl = `https://${payload.ref}.supabase.co`;
+          }
+        }
+      } catch (_) {}
+    }
+
+    this.url = rawUrl
+      ? rawUrl.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/+$/, '')
+      : null;
 
     if (this.url && this.key && this.url.startsWith('http')) {
       try {
@@ -85,6 +99,7 @@ class SupabaseService {
     try {
       const { error } = await this.client.from('profiles').select('id').limit(1);
       if (error) {
+        const isTableMissing = error.message && (error.message.includes('not find') || error.code === 'PGRST205');
         return {
           isConfigured: true,
           connected: false,
@@ -93,7 +108,9 @@ class SupabaseService {
           url: this.url,
           hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
           hasAnonKey: Boolean(process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY),
-          error: `Erro ao testar ligação: ${error.message}. Verifique as políticas RLS.`,
+          error: isTableMissing
+            ? "Tabelas ausentes no Supabase. Por favor, execute o script SQL no SQL Editor do seu projeto Supabase (disponível na aba Configurações)."
+            : `Erro ao aceder à tabela 'profiles': ${error.message}`,
         };
       }
 

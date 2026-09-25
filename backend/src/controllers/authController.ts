@@ -122,8 +122,10 @@ export class AuthController {
       console.error('[Auth Register] Falha ao persistir perfil em public.profiles:', insertError.message || insertError);
       if (insertError.code === '23505') {
         res.status(409).json({ error: 'Já existe uma conta associada a este número de celular ou endereço de email no Supabase.' });
+      } else if (insertError.code === 'PGRST205' || (insertError.message && insertError.message.includes('not find the table'))) {
+        res.status(500).json({ error: "A tabela 'public.profiles' ainda não existe no seu projeto Supabase. Execute o script SQL no SQL Editor do Supabase." });
       } else {
-        res.status(500).json({ error: 'Não foi possível gravar o utilizador no Supabase. O registo foi cancelado.' });
+        res.status(500).json({ error: `Erro no Supabase: ${insertError.message || 'Falha ao persistir no banco de dados.'}` });
       }
       return;
     }
