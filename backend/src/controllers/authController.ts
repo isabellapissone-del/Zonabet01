@@ -99,18 +99,16 @@ export class AuthController {
       return;
     }
 
-    // 2. Gravação primária direta em public.profiles aguardando confirmação
+    // 2. Gravação primária direta em public.profiles aguardando confirmação (EXATAMENTE os 10 campos)
     const { error: insertError } = await supabase
       .from('profiles')
       .insert({
         id: newUser.id,
         name: newUser.name,
-        email: newUser.email,
         phone: newUser.phone,
-        password_hash: newUser.passwordHash,
         role: newUser.role,
-        balance: 0.00,
         status: 'ACTIVE',
+        balance: 0.00,
         referral_code: newUser.referralCode,
         referred_by: newUser.referredBy || null,
         created_at: newUser.createdAt,
@@ -121,7 +119,7 @@ export class AuthController {
     if (insertError) {
       console.error('[Auth Register] Falha ao persistir perfil em public.profiles:', insertError.message || insertError);
       if (insertError.code === '23505') {
-        res.status(409).json({ error: 'Já existe uma conta associada a este número de celular ou endereço de email no Supabase.' });
+        res.status(409).json({ error: 'Já existe uma conta associada a este número de celular ou código de convite no Supabase.' });
       } else if (insertError.code === 'PGRST205' || (insertError.message && insertError.message.includes('not find the table'))) {
         res.status(500).json({ error: "A tabela 'public.profiles' ainda não existe no seu projeto Supabase. Execute o script SQL no SQL Editor do Supabase." });
       } else {
@@ -130,7 +128,14 @@ export class AuthController {
       return;
     }
 
-    // 4. Somente após confirmação bem-sucedida da persistência no Supabase:
+    // 4. Salvar credenciais seguras no cofre persistente do Supabase (sem colocar em profiles)
+    await supabaseService.saveUserCredential(newUser.id, {
+      phone: newUser.phone,
+      email: newUser.email,
+      passwordHash: newUser.passwordHash,
+    });
+
+    // 5. Somente após confirmação bem-sucedida da persistência no Supabase:
     db.users.set(userId, newUser);
 
     // Record the referral relationship
@@ -197,9 +202,11 @@ export class AuthController {
     // Fallback to Supabase if not in memory
     if (!user && supabaseService.isAvailable()) {
       console.log(`[Auth] Utilizador ${identifier} não encontrado em memória. A procurar no Supabase...`);
-      // Since findUserById takes an ID, we might need a findUserByIdentifier in supabaseService
-      // For now, let's assume the startup hydration should have loaded it, 
-      // but if not, we can try to find by phone if the identifier looks like one.
+      user = (await supabaseService.findUserByIdentifier(identifier)) || undefined;
+      if (user) {
+        db.users.set(user.id, user);
+        await WalletService.getWallet(user.id);
+      }
     }
 
     if (!user) {

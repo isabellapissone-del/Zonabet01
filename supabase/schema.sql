@@ -6,8 +6,6 @@ CREATE TABLE IF NOT EXISTS profiles (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   phone TEXT UNIQUE NOT NULL,
-  email TEXT UNIQUE,
-  password_hash TEXT,
   role TEXT DEFAULT 'USER' CHECK (role IN ('USER', 'ADMIN')),
   status TEXT DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'BLOCKED')),
   balance DECIMAL(12, 2) DEFAULT 0.00,

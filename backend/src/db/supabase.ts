@@ -1,9 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import { dbStore } from './store.ts';
+import { config } from '../config/index.ts';
 import type { User, Wallet, WalletTransaction, Match, Bet, DepositProof, AuditLog } from '../types/index.ts';
 
 dotenv.config();
+
+export interface UserCredential {
+  userId: string;
+  phone: string;
+  email: string;
+  passwordHash: string;
+}
 
 export interface SupabaseStatus {
   isConfigured: boolean;
@@ -20,6 +29,152 @@ class SupabaseService {
   private client: SupabaseClient | null = null;
   private url: string | null = null;
   private key: string | null = null;
+
+  private getVaultKey(): Buffer {
+    const secret = config.jwtSecret || process.env.JWT_SECRET || 'zonabet-auth-internal-secure-key';
+    return crypto.createHash('sha256').update(secret).digest();
+  }
+
+  private encryptVault(data: any): string {
+    const key = this.getVaultKey();
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+    encrypted += cipher.final('hex');
+    const tag = cipher.getAuthTag().toString('hex');
+    return `${iv.toString('hex')}:${tag}:${encrypted}`;
+  }
+
+  private decryptVault(encryptedString: string): any {
+    try {
+      const parts = encryptedString.split(':');
+      if (parts.length !== 3) return null;
+      const [ivHex, tagHex, cipherHex] = parts;
+      const key = this.getVaultKey();
+      const iv = Buffer.from(ivHex, 'hex');
+      const tag = Buffer.from(tagHex, 'hex');
+      const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+      decipher.setAuthTag(tag);
+      let decrypted = decipher.update(cipherHex, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      return JSON.parse(decrypted);
+    } catch (err) {
+      console.warn('[Supabase Vault] Erro ao desencriptar cofre de credenciais:', err);
+      return null;
+    }
+  }
+
+  public async saveUserCredential(
+    userId: string,
+    cred: { phone: string; email: string; passwordHash: string }
+  ): Promise<void> {
+    if (!this.client) return;
+    try {
+      const { data } = await this.client
+        .from('system_settings')
+        .select('config')
+        .eq('id', 'auth_vault')
+        .maybeSingle();
+
+      let vault: Record<string, UserCredential> = {};
+      if (data && data.config) {
+        if (typeof data.config.encrypted === 'string') {
+          vault = this.decryptVault(data.config.encrypted) || {};
+        } else if (typeof data.config === 'object') {
+          vault = data.config;
+        }
+      }
+
+      vault[userId] = {
+        userId,
+        phone: cred.phone,
+        email: cred.email,
+        passwordHash: cred.passwordHash,
+      };
+
+      const encrypted = this.encryptVault(vault);
+      await this.client.from('system_settings').upsert({
+        id: 'auth_vault',
+        config: { encrypted },
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'id' });
+    } catch (err) {
+      console.error('[Supabase Vault] Erro ao salvar credencial:', err);
+    }
+  }
+
+  public async getAllCredentials(): Promise<Map<string, UserCredential>> {
+    const map = new Map<string, UserCredential>();
+    if (!this.client) return map;
+    try {
+      const { data } = await this.client
+        .from('system_settings')
+        .select('config')
+        .eq('id', 'auth_vault')
+        .maybeSingle();
+
+      if (data && data.config) {
+        let vault: Record<string, UserCredential> = {};
+        if (typeof data.config.encrypted === 'string') {
+          vault = this.decryptVault(data.config.encrypted) || {};
+        } else if (typeof data.config === 'object') {
+          vault = data.config;
+        }
+        for (const [uid, c] of Object.entries(vault)) {
+          map.set(uid, c as UserCredential);
+        }
+      }
+    } catch (err) {
+      console.warn('[Supabase Vault] Erro ao carregar credenciais:', err);
+    }
+    return map;
+  }
+
+  public async getUserCredential(userId: string): Promise<UserCredential | null> {
+    const all = await this.getAllCredentials();
+    return all.get(userId) || null;
+  }
+
+  public async findUserByIdentifier(identifier: string): Promise<User | null> {
+    if (!this.client) return null;
+    const trimmed = identifier.trim();
+    const cleanDigits = trimmed.replace(/\D/g, '');
+    try {
+      let query = this.client.from('profiles').select('*');
+      if (trimmed.startsWith('usr-')) {
+        query = query.eq('id', trimmed);
+      } else if (cleanDigits.length >= 8) {
+        query = query.or(`phone.eq.${trimmed},phone.eq.+258 ${cleanDigits},phone.eq.+${cleanDigits},phone.eq.${cleanDigits}`);
+      } else {
+        query = query.eq('name', trimmed);
+      }
+
+      const { data, error } = await query.maybeSingle();
+      if (error || !data) return null;
+
+      const cred = await this.getUserCredential(data.id);
+      const cleanPhone = (data.phone || '').replace(/\D/g, '');
+      const user: User = {
+        id: data.id,
+        phone: data.phone,
+        name: data.name,
+        email: cred?.email || `${cleanPhone}@zonabet.mz`,
+        passwordHash: cred?.passwordHash || '',
+        role: (data.role as 'USER' | 'ADMIN') || 'USER',
+        isBlocked: data.status === 'BLOCKED',
+        referralCode: data.referral_code || `ZONA${cleanPhone.slice(-9)}`,
+        referredBy: data.referred_by,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+      };
+
+      dbStore.users.set(user.id, user);
+      return user;
+    } catch (err) {
+      console.error('[Supabase] Erro ao procurar utilizador por identificador:', err);
+      return null;
+    }
+  }
 
   constructor() {
     this.init();
@@ -147,16 +302,23 @@ class SupabaseService {
       await this.client.from('profiles').upsert({
         id: user.id,
         phone: user.phone,
-        email: user.email,
-        password_hash: user.passwordHash,
         name: user.name,
         role: user.role,
         status: user.isBlocked ? 'BLOCKED' : 'ACTIVE',
+        balance: dbStore.wallets.get(user.id)?.balance || 0.00,
         referral_code: user.referralCode,
         referred_by: user.referredBy || null,
         created_at: user.createdAt,
         updated_at: user.updatedAt,
       }, { onConflict: 'id' });
+
+      if (user.passwordHash) {
+        await this.saveUserCredential(user.id, {
+          phone: user.phone,
+          email: user.email,
+          passwordHash: user.passwordHash,
+        });
+      }
     } catch (err) {
       console.warn('[Supabase Sync] Erro ao sincronizar perfil:', err);
     }
@@ -322,15 +484,18 @@ class SupabaseService {
 
       if (error || !data) return null;
 
+      const cred = await this.getUserCredential(data.id);
+      const cleanPhone = (data.phone || '').replace(/\D/g, '');
+
       return {
         id: data.id,
         phone: data.phone,
         name: data.name,
-        email: data.email || `${data.phone}@zonabet.co.mz`,
-        passwordHash: data.password_hash || '',
-        role: data.role as 'USER' | 'ADMIN',
+        email: cred?.email || `${cleanPhone}@zonabet.mz`,
+        passwordHash: cred?.passwordHash || '',
+        role: (data.role as 'USER' | 'ADMIN') || 'USER',
         isBlocked: data.status === 'BLOCKED',
-        referralCode: data.referral_code || '',
+        referralCode: data.referral_code || `ZONA${cleanPhone.slice(-9)}`,
         referredBy: data.referred_by,
         createdAt: data.created_at,
         updatedAt: data.updated_at,
@@ -408,19 +573,52 @@ class SupabaseService {
     
     const results = { users: 0, matches: 0, settings: 0 };
     try {
-      // 1. Fetch profiles
+      // 1. Fetch credentials and profiles
+      const credsMap = await this.getAllCredentials();
       const { data: profiles, error: pErr } = await this.client.from('profiles').select('*');
       if (!pErr && profiles && profiles.length > 0) {
         for (const p of profiles) {
+          const cred = credsMap.get(p.id);
+          const cleanPhone = (p.phone || '').replace(/\D/g, '');
           const existing = dbStore.users.get(p.id);
+
           if (existing) {
             existing.name = p.name || existing.name;
-            existing.email = p.email || existing.email;
-            existing.passwordHash = p.password_hash || existing.passwordHash;
-            existing.role = p.role || existing.role;
+            if (cred?.email) existing.email = cred.email;
+            if (cred?.passwordHash) existing.passwordHash = cred.passwordHash;
+            existing.role = (p.role as 'USER' | 'ADMIN') || existing.role;
             existing.isBlocked = p.status === 'BLOCKED';
             const wallet = dbStore.wallets.get(p.id);
             if (wallet) {
+              wallet.balance = Number(p.balance) || 0;
+            }
+          } else {
+            const userObj: User = {
+              id: p.id,
+              name: p.name,
+              phone: p.phone,
+              email: cred?.email || `${cleanPhone}@zonabet.mz`,
+              passwordHash: cred?.passwordHash || '',
+              role: (p.role as 'USER' | 'ADMIN') || 'USER',
+              isBlocked: p.status === 'BLOCKED',
+              referralCode: p.referral_code || `ZONA${cleanPhone.slice(-9)}`,
+              referredBy: p.referred_by || undefined,
+              createdAt: p.created_at || new Date().toISOString(),
+              updatedAt: p.updated_at || new Date().toISOString(),
+            };
+            dbStore.users.set(p.id, userObj);
+
+            let wallet = dbStore.wallets.get(p.id);
+            if (!wallet) {
+              wallet = {
+                id: p.id,
+                userId: p.id,
+                balance: Number(p.balance) || 0,
+                lockedBalance: 0,
+                updatedAt: p.updated_at || new Date().toISOString(),
+              };
+              dbStore.wallets.set(p.id, wallet);
+            } else {
               wallet.balance = Number(p.balance) || 0;
             }
           }
