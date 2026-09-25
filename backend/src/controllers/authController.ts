@@ -220,7 +220,9 @@ export class AuthController {
       if (referredBy) {
         // Tenta buscar o referenciador
         let inviter = db.users.get(referredBy);
-        if (!inviter) {
+        if (!inviter && firebaseService.isAvailable()) {
+          const dbFirestore = firebaseService.getDb()!;
+          const usersRef = dbFirestore.collection('users');
           const inviterDoc = await usersRef.doc(referredBy).get();
           if (inviterDoc.exists) {
             const d = inviterDoc.data()!;
