@@ -18,6 +18,7 @@ import {
   Radio,
   Gift,
   Download,
+  Book,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -124,15 +125,6 @@ export const Header: React.FC<HeaderProps> = ({
               <span>Moçambola & Nacional</span>
             </button>
             <button
-              onClick={() => handleNav('rules')}
-              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
-                currentView === 'rules' ? 'bg-slate-800/80 text-emerald-400 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
-              }`}
-            >
-              <Book className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              <span>Regras</span>
-            </button>
-            <button
               onClick={() => {
                 if (user) {
                   onOpenBets && onOpenBets();
@@ -170,8 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <span>Admin</span>
               </button>
             )}
-
-            <a
+            <button
               id="header-download-project-btn"
               href="/zonabet-projeto-completo.tar.gz"
               download="zonabet-projeto-completo.tar.gz"
@@ -181,7 +172,16 @@ export const Header: React.FC<HeaderProps> = ({
               <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-400" />
               <span className="hidden xl:inline">Baixar Código</span>
               <span className="xl:hidden">Baixar</span>
-            </a>
+            </button>
+            <button
+              onClick={() => handleNav('rules')}
+              className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
+                currentView === 'rules' ? 'bg-slate-800/80 text-emerald-400 shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <Book className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span>Regras</span>
+            </button>
           </nav>
 
           {/* Right Header Actions */}
@@ -384,17 +384,22 @@ export const Header: React.FC<HeaderProps> = ({
                 </button>
 
                 <button
-                  onClick={() => handleNav('rules')}
-                  className={`w-full p-3 rounded-xl text-left text-xs font-bold flex items-center gap-3 transition-colors ${
-                    currentView === 'rules'
-                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                  }`}
+                  onClick={() => {
+                    setMobileMenuOpen(false);
+                    setIsOpenMobile(true);
+                  }}
+                  className="w-full p-3 rounded-xl text-left text-xs font-bold flex items-center justify-between text-slate-300 hover:bg-slate-800 transition-colors"
                 >
-                  <Book className="w-4 h-4 text-emerald-400" />
-                  <span>Regulamento Oficial</span>
+                  <div className="flex items-center gap-3">
+                    <Ticket className="w-4 h-4 text-emerald-400" />
+                    <span>Boletim de Apostas</span>
+                  </div>
+                  {items.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px]">
+                      {items.length}
+                    </span>
+                  )}
                 </button>
-
                 {user && (
                   <>
                     <button
@@ -457,23 +462,16 @@ export const Header: React.FC<HeaderProps> = ({
                     <span>{currentView === 'admin' ? 'Voltar às Apostas Desportivas' : 'Painel de Administração'}</span>
                   </button>
                 )}
-
                 <button
-                  onClick={() => {
-                    setMobileMenuOpen(false);
-                    setIsOpenMobile(true);
-                  }}
-                  className="w-full p-3 rounded-xl text-left text-xs font-bold flex items-center justify-between text-slate-300 hover:bg-slate-800 transition-colors"
+                  onClick={() => handleNav('rules')}
+                  className={`w-full p-3 rounded-xl text-left text-xs font-bold flex items-center gap-3 transition-colors ${
+                    currentView === 'rules'
+                      ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Ticket className="w-4 h-4 text-emerald-400" />
-                    <span>Boletim de Apostas</span>
-                  </div>
-                  {items.length > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px]">
-                      {items.length}
-                    </span>
-                  )}
+                  <Book className="w-4 h-4 text-emerald-400" />
+                  <span>Regulamento Oficial</span>
                 </button>
 
 

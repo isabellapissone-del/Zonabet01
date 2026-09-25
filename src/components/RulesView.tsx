@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, Book, ChevronRight, Scale, Info, AlertTriangle, HelpCircle } from 'lucide-react';
+import { Shield, Book, ChevronRight, Scale, Info, AlertTriangle, HelpCircle, Trophy, Wallet as WalletIcon, LogOut } from 'lucide-react';
 
 export const RulesView: React.FC = () => {
   return (
