@@ -1,0 +1,38 @@
+services:
+  app:
+    image: node:22-alpine
+    working_dir: /app
+    init: true
+    # Bind-mount the cloned source so edits appear without rebuilding the image
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      # Vite >= 6.1 appends this to allowedHosts so the preview origin is accepted
+      - __VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS
+      - BASE44_PUBLIC_HOST_SUFFIX
+      - BASE44_SANDBOX_HOST_DOMAIN
+      # Optional external integrations (app boots fine without them via in-memory store)
+      - JWT_SECRET
+      - SUPABASE_URL
+      - SUPABASE_ANON_KEY
+      - SUPABASE_SERVICE_ROLE_KEY
+      - FIREBASE_SERVICE_ACCOUNT
+      - VITE_FIREBASE_PROJECT_ID
+      - VITE_FIREBASE_API_KEY
+      - VITE_FIREBASE_AUTH_DOMAIN
+      - VITE_FIREBASE_STORAGE_BUCKET
+      - VITE_FIREBASE_MESSAGING_SENDER_ID
+      - VITE_FIREBASE_APP_ID
+      - VITE_FIREBASE_FIRESTORE_DATABASE_ID
+      - VITE_SUPABASE_URL
+      - VITE_SUPABASE_ANON_KEY
+      - VITE_API_URL
+      - MINIMUM_STAKE
+      - MAXIMUM_STAKE
+      - MAXIMUM_POTENTIAL_WIN
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
