@@ -13,7 +13,7 @@ import {
   updateMatchStatusSchema,
   matchResultSchema,
   balanceAdjustmentSchema,
-} from '../validators/schemas.ts';
+} from '../validators/validation.ts';
 import { Money } from '../utils/money.ts';
 import { settingsService } from '../services/settingsService.ts';
 import { RiskService } from '../services/riskService.ts';

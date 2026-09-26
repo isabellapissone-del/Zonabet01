@@ -13,7 +13,7 @@ import {
   X,
   Trophy,
   History,
-  Database,
+  Server,
   Phone,
   Radio,
   Gift,

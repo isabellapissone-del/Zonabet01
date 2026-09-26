@@ -54,7 +54,6 @@ import {
   Download,
   Paperclip,
   Image as ImageIcon,
-  Database,
   Copy,
   Check,
   Terminal,

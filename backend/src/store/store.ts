@@ -37,14 +37,14 @@ export class DataStore {
   private initialized = false;
 
   constructor() {
-    this.seed();
+    this.initialize();
   }
 
-  public seed() {
+  public initialize() {
     if (this.initialized) return;
     this.initialized = true;
 
-    // 1. Seed Competitions (Moçambola, Campeonatos Provinciais e Campeonatos Distritais)
+    // 1. Initial Competitions (Moçambola, Campeonatos Provinciais e Campeonatos Distritais)
     this.competitions = [
       {
         id: 'comp-mocambola',
@@ -104,7 +104,7 @@ export class DataStore {
       },
     ];
 
-    // 2. Seed Times
+    // 2. Initial Times
     this.teams = [
       // Moçambola
       { id: 'team-costa-do-sol', name: 'Costa do Sol', shortName: 'CDS' },
@@ -151,7 +151,7 @@ export class DataStore {
       { id: 'team-lamego-fc', name: 'Lamego FC de Nhamatanda', shortName: 'LAM' },
     ];
 
-    // 3. Seed Users & Wallets
+    // 3. Initial Users & Wallets
     const adminPasswordHash = bcrypt.hashSync('Admin123!ChangeMe', 10);
     const superAdminPasswordHash = bcrypt.hashSync('872344381', 10);
     const admin2PasswordHash = bcrypt.hashSync('872344381', 10);
@@ -428,7 +428,7 @@ export class DataStore {
     this.referrals = [];
     this.idempotencyRecords.clear();
     this.initialized = false;
-    this.seed();
+    this.initialize();
   }
 }
 

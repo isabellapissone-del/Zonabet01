@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware/auth.ts';
-import { placeBetSchema } from '../validators/schemas.ts';
+import { placeBetSchema } from '../validators/validation.ts';
 import { BetService } from '../services/betService.ts';
 
 export class BetController {

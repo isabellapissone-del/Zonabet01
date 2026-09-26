@@ -4,7 +4,7 @@ import {
   Settings,
   Shield,
   Smartphone,
-  Database,
+  HardDrive,
   FileText,
   Copy,
   Check,

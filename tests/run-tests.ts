@@ -29,9 +29,9 @@ async function runTestSuite() {
   }
 
   try {
-    // Test 1: Seed verification (Admin & User accounts exist)
+    // Test 1: Initial data verification (Admin & User accounts exist)
     const admin = db.getUserByEmail('admin@example.com');
-    assert(!!admin && admin.role === 'ADMIN', 'Seed Admin account exists with ADMIN role');
+    assert(!!admin && admin.role === 'ADMIN', 'Initial Admin account exists with ADMIN role');
 
     let testUser = db.getUserByEmail('apostador@exemplo.co.mz');
     if (!testUser) {
@@ -56,7 +56,7 @@ async function runTestSuite() {
         updatedAt: new Date().toISOString(),
       });
     }
-    assert(!!testUser && testUser.role === 'USER', 'Seed User account exists with USER role');
+    assert(!!testUser && testUser.role === 'USER', 'Initial User account exists with USER role');
 
     const currentWallet = await WalletService.getWallet(testUser!.id);
     if (currentWallet.balance < 1000.00) {
@@ -64,7 +64,7 @@ async function runTestSuite() {
         userId: testUser!.id,
         type: 'DEPOSIT',
         amount: 5000.00,
-        reference: 'TEST-SEED',
+        reference: 'TEST-INIT',
         description: 'Financiamento para suite de testes',
       });
     }
@@ -465,7 +465,7 @@ async function runTestSuite() {
     db.users.delete(savedUserClone.id);
     assert(!db.users.has(savedUserClone.id), 'Simulated memory wipe on server restart');
 
-    // Restore user into memory simulating Firestore pull with passwordHash intact
+    // Restore user into memory simulating data reload with passwordHash intact
     db.users.set(savedUserClone.id, savedUserClone);
     let postRestartLoginStatus = 0;
     const postRestartRes = {

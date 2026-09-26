@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import { Mutex } from 'async-mutex';
 import { db } from '../store/store.ts';
 import { config } from '../config/index.ts';
-import { registerSchema, loginSchema } from '../validators/schemas.ts';
+import { registerSchema, loginSchema } from '../validators/validation.ts';
 import { WalletService } from '../services/walletService.ts';
 import { AuditService } from '../services/auditService.ts';
 import type { AuthenticatedRequest } from '../middleware/auth.ts';

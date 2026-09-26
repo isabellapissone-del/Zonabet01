@@ -1,7 +1,7 @@
 # ZONABET — Base44 Dev Environment
 
 ## Architecture
-Fullstack single-origin app: `tsx server.ts` starts an Express API server with Vite in middleware mode on port 3000. The Vite dev server is embedded (no separate process), so frontend hot-reloads and API routes share one origin. No database container or external persistence is needed — the backend uses an in-memory `DataStore` (`backend/src/store/store.ts`) seeded with competitions, teams, and admin users.
+Fullstack single-origin app: `tsx server.ts` starts an Express API server with Vite in middleware mode on port 3000. The Vite dev server is embedded (no separate process), so frontend hot-reloads and API routes share one origin. No external data container or persistence is needed — the backend uses an in-memory `DataStore` (`backend/src/store/store.ts`) initialized with competitions, teams, and admin users.
 
 ## Running
 - `docker compose -f docker-compose.base44.yml up -d` — starts the app on port 3000.
@@ -20,7 +20,7 @@ The app boots without any external credentials. `JWT_SECRET` has a dev fallback.
 ## Key files
 - `server.ts` — entry point, wires Express + Vite middleware.
 - `backend/src/app.ts` — Express app, routes registered under `/api` and root.
-- `backend/src/store/store.ts` — in-memory database with seed data.
+- `backend/src/store/store.ts` — in-memory store with initial data.
 - `backend/src/config/index.ts` — config, JWT secret handling, bet limits.
 - `src/App.tsx` — React frontend root.
 - `vite.config.ts` — Vite + PWA + Tailwind config.
