@@ -1,0 +1,77 @@
+{
+  "previewPort": 3000,
+  "healthPath": "/api/health",
+  "startCommand": "docker compose -f docker-compose.base44.yml up -d",
+  "secrets": [
+    {
+      "name": "JWT_SECRET",
+      "description": "Secret used to sign/verify JWT session tokens. The app generates a dev fallback if unset, but set a real value for persistent sessions.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SUPABASE_URL",
+      "description": "Supabase project URL (e.g. https://xyz.supabase.co). Optional — the app uses an in-memory store when unset.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SUPABASE_ANON_KEY",
+      "description": "Supabase public anon key. Optional — only needed for Supabase persistence.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "SUPABASE_SERVICE_ROLE_KEY",
+      "description": "Supabase service role key used by the backend for privileged operations. Optional — only needed for Supabase persistence.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "FIREBASE_SERVICE_ACCOUNT",
+      "description": "Firebase service account JSON (string or Base64). Optional — only needed for Firebase persistence/auth.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_PROJECT_ID",
+      "description": "Firebase project ID. Optional — only needed for Firebase client integration.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_API_KEY",
+      "description": "Firebase public API key. Optional — only needed for Firebase client integration.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_AUTH_DOMAIN",
+      "description": "Firebase auth domain (e.g. project.firebaseapp.com). Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_STORAGE_BUCKET",
+      "description": "Firebase storage bucket. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_MESSAGING_SENDER_ID",
+      "description": "Firebase messaging sender ID. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_APP_ID",
+      "description": "Firebase app ID. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_FIREBASE_FIRESTORE_DATABASE_ID",
+      "description": "Firestore database ID. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_SUPABASE_URL",
+      "description": "Supabase URL exposed to the frontend bundle. Optional.",
+      "requiredAtBoot": false
+    },
+    {
+      "name": "VITE_SUPABASE_ANON_KEY",
+      "description": "Supabase anon key exposed to the frontend bundle. Optional.",
+      "requiredAtBoot": false
+    }
+  ]
+}
