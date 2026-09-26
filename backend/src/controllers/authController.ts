@@ -118,7 +118,12 @@ export class AuthController {
         }
 
         const passwordHash = await bcrypt.hash(password, 10);
-        const userId = `usr-${crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')}`;
+        const randomId = (crypto && typeof crypto.randomUUID === 'function')
+          ? crypto.randomUUID()
+          : (crypto && typeof crypto.randomBytes === 'function')
+            ? crypto.randomBytes(16).toString('hex')
+            : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+        const userId = `usr-${randomId}`;
 
         const assignedRole: 'USER' = 'USER';
         const assignedStatus: 'ACTIVE' = 'ACTIVE';
@@ -189,6 +194,7 @@ export class AuthController {
         // Inicializar carteira
         const wallet = await WalletService.getWallet(userId);
         wallet.balance = initialBalance;
+        await db.saveWallet(wallet);
 
         const tokenPayload: AuthTokenPayload = {
           userId: newUser.id,
