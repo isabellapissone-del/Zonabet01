@@ -12,6 +12,7 @@ import { db } from './store/store.ts';
 
 export function createExpressApp() {
   const app = express();
+  app.set('trust proxy', 1);
 
   // Helmet security headers (configured for iframe embed & SPA compatibility)
   app.use(
