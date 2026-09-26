@@ -30,10 +30,10 @@ async function runTestSuite() {
 
   try {
     // Test 1: Initial data verification (Admin & User accounts exist)
-    const admin = db.getUserByEmail('admin@example.com');
+    const admin = await db.getUserByEmail('admin@example.com');
     assert(!!admin && admin.role === 'ADMIN', 'Initial Admin account exists with ADMIN role');
 
-    let testUser = db.getUserByEmail('apostador@exemplo.co.mz');
+    let testUser = await db.getUserByEmail('apostador@exemplo.co.mz');
     if (!testUser) {
       const userPasswordHash = bcrypt.hashSync('User123!', 10);
       testUser = {
@@ -454,7 +454,7 @@ async function runTestSuite() {
 
     // Test 21: Password Hash Persistence & Recovery on Server Restart
     // Register a user and verify that passwordHash is stored and valid
-    const userInMem = db.getUserByPhone(racePhone);
+    const userInMem = await db.getUserByPhone(racePhone);
     assert(
       !!userInMem && !!userInMem.passwordHash && userInMem.passwordHash.startsWith('$2'),
       'Registered user has valid bcrypt passwordHash stored'

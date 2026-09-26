@@ -40,7 +40,7 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
       throw new Error('Token inválido ou expirado');
     }
 
-    const user = db.users.get(payload.userId);
+    const user = await db.getUserById(payload.userId);
 
     if (!user) {
       console.warn(`[Auth] Utilizador ${payload.userId} não encontrado para o token fornecido.`);

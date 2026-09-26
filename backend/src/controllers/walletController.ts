@@ -19,7 +19,7 @@ export class WalletController {
         id: wallet.id,
         balance: wallet.balance,
         currency: config.currency,
-        isTestMode: config.isTestMode,
+        isTestMode: config.nodeEnv !== 'production',
       },
     });
   }
@@ -30,7 +30,7 @@ export class WalletController {
       return;
     }
 
-    const transactions = db.getTransactions(req.user.userId);
+    const transactions = await db.getTransactions(req.user.userId);
     res.status(200).json({ transactions });
   }
 
@@ -75,7 +75,7 @@ export class WalletController {
 
     try {
       // Register deposit proof for administration review & audit trail
-      const depositProof = db.addDepositProof({
+      const depositProof = await db.addDepositProof({
         id: `proof-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         userId: req.user.userId,
         userName: user?.name || 'Apostador ZONABET',
@@ -164,7 +164,7 @@ export class WalletController {
       const { wallet: updatedWallet, transaction } = await WalletService.executeTransaction({
         userId: req.user.userId,
         type: 'WITHDRAWAL',
-        amount,
+        amount: -amount,
         reference: refCode,
         description: `Levantamento via ${methodLabel} para ${target} (Bruto: ${amount.toFixed(2)} MT | ${feeText} | Líquido enviado: ${netAmount.toFixed(2)} MT)`,
       });
@@ -228,7 +228,7 @@ export class WalletController {
       res.status(401).json({ error: 'Não autenticado' });
       return;
     }
-    const proofs = db.getDepositProofs(req.user.userId);
+    const proofs = await db.getDepositProofs(req.user.userId);
     res.status(200).json({ proofs });
   }
 }

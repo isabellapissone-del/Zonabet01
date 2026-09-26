@@ -27,5 +27,4 @@ export const config = {
     maximumPotentialWin: parseFloat(process.env.MAXIMUM_POTENTIAL_WIN || '1000000'),
   },
   currency: 'MZN',
-  isTestMode: !isProduction, // In-memory/test only when not production unless configured
 };

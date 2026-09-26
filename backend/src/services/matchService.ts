@@ -4,31 +4,24 @@ import { AuditService } from './auditService.ts';
 
 export class MatchService {
   /**
-   * Retrieves all matches with their markets and selections from in-memory store
+   * Retrieves all matches with their markets and selections
    */
   static async getAllMatches(filters?: { status?: string; competitionId?: string; category?: string }): Promise<Match[]> {
-    let localMatches = Array.from(db.matches.values()).map(m => {
-      const comp = db.competitions.find(c => c.id === m.competitionId);
+    const competitions = await db.getCompetitions();
+    const matches = await db.getMatches(filters);
+    
+    return matches.map(m => {
+      const comp = competitions.find(c => c.id === m.competitionId);
       const compCategory = (m.competitionCategory && m.competitionCategory !== 'Futebol')
         ? m.competitionCategory
         : (comp?.category || (m.competitionId?.toLowerCase().includes('prov') || m.competitionName?.toLowerCase().includes('provincial') ? 'PROVINCIAL' : m.competitionId?.toLowerCase().includes('dist') || m.competitionName?.toLowerCase().includes('distrital') ? 'DISTRITAL' : 'MOCAMBOLA'));
       return { ...m, competitionCategory: compCategory as any };
     });
-
-    if (filters?.competitionId) {
-      localMatches = localMatches.filter(m => m.competitionId === filters.competitionId);
-    }
-    if (filters?.category && filters.category !== 'ALL') {
-      localMatches = localMatches.filter(m => m.competitionCategory === filters.category);
-    }
-    if (filters?.status) {
-      localMatches = localMatches.filter(m => m.status === filters.status);
-    }
-    return localMatches;
   }
 
   static async getMatchById(id: string): Promise<Match | null> {
-    return db.matches.get(id) || null;
+    const match = await db.getMatch(id);
+    return match || null;
   }
 
   /**
@@ -48,7 +41,8 @@ export class MatchService {
   }): Promise<Match> {
     const { homeTeam, awayTeam, kickoffDate, kickoffTime, odds } = params;
 
-    const comp = db.competitions.find(c => c.id === params.competitionId);
+    const competitions = await db.getCompetitions();
+    const comp = competitions.find(c => c.id === params.competitionId);
     let compCategory: 'MOCAMBOLA' | 'PROVINCIAL' | 'DISTRITAL' = 'MOCAMBOLA';
     if (comp?.category) {
       compCategory = comp.category as any;
@@ -59,6 +53,9 @@ export class MatchService {
     }
 
     const compName = comp?.name || params.description || (compCategory === 'PROVINCIAL' ? 'Campeonato Provincial' : compCategory === 'DISTRITAL' ? 'Campeonato Distrital' : 'Moçambola');
+
+    // Parse kickoffDate and kickoffTime to ISO kickoff_at
+    const kickoffAt = new Date(`${kickoffDate}T${kickoffTime}:00`).toISOString();
 
     const match: Match = {
       id: `m-${Date.now()}`,
@@ -100,8 +97,8 @@ export class MatchService {
     };
     match.markets.push(correctScoreMarket);
 
-    db.matches.set(match.id, match);
-    AuditService.log(params.adminId, params.adminEmail, 'CREATE_MATCH', 'Match', match.id, null, match, params.ip);
+    await db.saveMatch(match);
+    await AuditService.log(params.adminId, params.adminEmail, 'CREATE_MATCH', 'Match', match.id, null, match, params.ip);
 
     return match;
   }
@@ -136,8 +133,8 @@ export class MatchService {
       }
     }
 
-    db.matches.set(match.id, match);
-    AuditService.log(params.adminId, params.adminEmail, 'UPDATE_ODDS', 'Match', match.id, oldMatch, match, params.ip);
+    await db.saveMatch(match);
+    await AuditService.log(params.adminId, params.adminEmail, 'UPDATE_ODDS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
   }
 
@@ -156,8 +153,8 @@ export class MatchService {
     match.status = params.status;
     match.updatedAt = new Date().toISOString();
 
-    db.matches.set(match.id, match);
-    AuditService.log(params.adminId, params.adminEmail, 'UPDATE_STATUS', 'Match', match.id, oldMatch, match, params.ip);
+    await db.saveMatch(match);
+    await AuditService.log(params.adminId, params.adminEmail, 'UPDATE_STATUS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
   }
 
@@ -165,12 +162,12 @@ export class MatchService {
     const match = await this.getMatchById(params.matchId);
     if (!match) throw new Error('Jogo não encontrado');
 
-    const market = match.markets.find((m) => m.id === params.marketId);
+    const market = match.markets.find((m: any) => m.id === params.marketId);
     if (!market) throw new Error('Mercado não encontrado');
 
     market.status = params.status;
     
-    db.matches.set(match.id, match);
+    await db.saveMatch(match);
     return market;
   }
 
@@ -178,15 +175,15 @@ export class MatchService {
     const match = await this.getMatchById(params.matchId);
     if (!match) throw new Error('Jogo não encontrado');
 
-    const market = match.markets.find((m) => m.id === params.marketId);
+    const market = match.markets.find((m: any) => m.id === params.marketId);
     if (!market) throw new Error('Mercado não encontrado');
 
     for (const selUpdate of params.selections) {
-      const sel = market.selections.find((s) => s.id === selUpdate.id);
+      const sel = market.selections.find((s: any) => s.id === selUpdate.id);
       if (sel) sel.odds = selUpdate.odds;
     }
 
-    db.matches.set(match.id, match);
+    await db.saveMatch(match);
     return market;
   }
 
@@ -194,7 +191,7 @@ export class MatchService {
     const match = await this.getMatchById(params.matchId);
     if (!match) throw new Error('Jogo não encontrado');
 
-    const market = match.markets.find((m) => m.id === params.marketId);
+    const market = match.markets.find((m: any) => m.id === params.marketId);
     if (!market) throw new Error('Mercado não encontrado');
 
     const newSelection: Selection = {
@@ -208,7 +205,7 @@ export class MatchService {
 
     market.selections.push(newSelection);
 
-    db.matches.set(match.id, match);
+    await db.saveMatch(match);
     return market;
   }
 

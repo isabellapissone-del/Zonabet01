@@ -100,7 +100,9 @@ export class AuthController {
       try {
         // 3. Verificação de Duplicidade (Memória)
         console.log('[Auth Register] Passo 3: Verificação memória');
-        if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
+        const userByPhone = await db.getUserByPhone(cleanDigits);
+        const userByFormattedPhone = await db.getUserByPhone(formattedPhone);
+        if (userByPhone || userByFormattedPhone) {
           res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
           return;
         }
@@ -109,7 +111,7 @@ export class AuthController {
         if (!email || email.trim() === '') {
           email = `${cleanDigits}@zonabet.mz`;
         } else {
-          if (db.getUserByEmail(email)) {
+          if (await db.getUserByEmail(email)) {
             res.status(409).json({ error: 'Já existe uma conta associada a este endereço de email.' });
             return;
           }
@@ -126,10 +128,7 @@ export class AuthController {
         let referredBy: string | null = null;
         if (referralCode && referralCode.trim() !== '') {
           console.log('[Auth Register] Processando código de convite:', referralCode);
-          const cleanRef = referralCode.trim().toUpperCase();
-          const cleanRefDigits = cleanRef.replace(/\D/g, '');
-          
-          const inviterInMemory = db.getUserByReferralCode(cleanRef);
+          const inviterInMemory = await db.getUserByReferralCode(referralCode.trim().toUpperCase());
 
           if (inviterInMemory) {
             referredBy = inviterInMemory.id;
@@ -139,7 +138,7 @@ export class AuthController {
 
         // 5. Geração de código de indicação individual único
         let generatedReferralCode = `ZONA${cleanDigits}`;
-        let isUnique = !db.getUserByReferralCode(generatedReferralCode);
+        let isUnique = !(await db.getUserByReferralCode(generatedReferralCode));
         
         if (!isUnique) {
           generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
@@ -166,17 +165,14 @@ export class AuthController {
 
         // 6. Gravação primária
         console.log('[Auth Register] Gravando perfil...', { id: newUser.id, phone: newUser.phone });
-        console.log('[Auth Register] Perfil gravado com sucesso.');
-
-        // 9. Confirmar na memória local
-        db.users.set(userId, newUser);
+        await db.saveUser(newUser);
 
         // Relacionamento de convite
         if (referredBy) {
-          const inviter = db.users.get(referredBy);
+          const inviter = await db.getUserById(referredBy);
 
           if (inviter) {
-            db.addReferral({
+            await db.addReferral({
               id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
               inviterId: inviter.id,
               inviterName: inviter.name,
@@ -247,7 +243,7 @@ export class AuthController {
     const identifier = parseResult.data.identifier || parseResult.data.email || parseResult.data.phone || '';
     const { password } = parseResult.data;
     
-    const user = db.getUserByIdentifier(identifier);
+    const user = await db.getUserByIdentifier(identifier);
 
     if (!user) {
       res.status(401).json({ error: 'Credenciais inválidas. Número de celular ou palavra-passe incorretos.' });
@@ -278,7 +274,7 @@ export class AuthController {
     const wallet = await WalletService.getWallet(user.id);
 
     if (user.role === 'ADMIN') {
-      AuditService.log(
+      await AuditService.log(
         user.id,
         user.email,
         'ADMIN_LOGIN',
@@ -317,7 +313,7 @@ export class AuthController {
       return;
     }
 
-    const user = db.users.get(req.user.userId);
+    const user = await db.getUserById(req.user.userId);
 
     if (!user) {
       res.status(404).json({ error: 'Utilizador não encontrado' });

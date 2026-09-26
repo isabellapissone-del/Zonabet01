@@ -23,7 +23,7 @@ export class MatchController {
     res.status(200).json({ match });
   }
 
-  static getCompetitions(req: Request, res: Response): void {
+  static async getCompetitions(req: Request, res: Response): Promise<void> {
     const fallbackCompetitions = [
       { id: 'comp-mocambola', name: 'Moçambola', country: 'Moçambique (Nacional)', code: 'MOC', category: 'MOCAMBOLA' },
       { id: 'comp-prov-sofala', name: 'Campeonato Provincial de Sofala', country: 'Sofala, Moçambique', code: 'CPS', category: 'PROVINCIAL' },
@@ -34,11 +34,13 @@ export class MatchController {
       { id: 'comp-dist-dondo', name: 'Campeonato Distrital do Dondo', country: 'Distrito do Dondo, Sofala', code: 'CDD', category: 'DISTRITAL' },
       { id: 'comp-dist-nhamatanda', name: 'Campeonato Distrital de Nhamatanda', country: 'Distrito de Nhamatanda, Sofala', code: 'CDN', category: 'DISTRITAL' },
     ];
-    const competitions = db.competitions && db.competitions.length > 0 ? db.competitions : fallbackCompetitions;
+    const list = await db.getCompetitions();
+    const competitions = list.length > 0 ? list : fallbackCompetitions;
     res.status(200).json({ competitions });
   }
 
-  static getTeams(req: Request, res: Response): void {
-    res.status(200).json({ teams: db.teams });
+  static async getTeams(req: Request, res: Response): Promise<void> {
+    const teams = await db.getTeams();
+    res.status(200).json({ teams });
   }
 }

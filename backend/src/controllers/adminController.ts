@@ -120,10 +120,10 @@ export class AdminController {
     const digitsOnly = cleanPhone.replace(/\D/g, '');
     const nationalNumber = digitsOnly.startsWith('258') ? digitsOnly.slice(3) : digitsOnly;
     let referralCode = `ZONA${nationalNumber || Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    if (db.getUserByReferralCode(referralCode)) {
+    if (await db.getUserByReferralCode(referralCode)) {
       let uniqueSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
       referralCode = `${referralCode}-${uniqueSuffix}`;
-      while (db.getUserByReferralCode(referralCode)) {
+      while (await db.getUserByReferralCode(referralCode)) {
         referralCode = `ZONA-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
       }
     }
@@ -658,8 +658,8 @@ export class AdminController {
     });
   }
 
-  static getDepositProofs(req: AuthenticatedRequest, res: Response): void {
-    const proofs = db.getDepositProofs();
+  static async getDepositProofs(req: AuthenticatedRequest, res: Response): Promise<void> {
+    const proofs = await db.getDepositProofs();
     res.status(200).json({ proofs });
   }
 
@@ -677,7 +677,7 @@ export class AdminController {
       return;
     }
 
-    const proof = db.getDepositProof(id);
+    const proof = await db.getDepositProof(id);
     if (!proof) {
       res.status(404).json({ error: 'Comprovativo de depósito não encontrado.' });
       return;
@@ -706,7 +706,7 @@ export class AdminController {
       }
     }
 
-    const updated = db.updateDepositProofStatus(
+    const updated = await db.updateDepositProofStatus(
       id,
       status,
       req.user.email,
@@ -917,7 +917,7 @@ export class AdminController {
         shortName: shortName || name.substring(0, 3).toUpperCase(),
         competitionId
       };
-      db.teams.push(newTeam);
+      db.teams.set(newTeam.id, newTeam);
       res.status(201).json({ message: 'Equipa cadastrada com sucesso!', team: newTeam });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

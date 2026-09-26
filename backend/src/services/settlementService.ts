@@ -39,6 +39,8 @@ export class SettlementService {
     match.status = 'FINISHED';
     match.updatedAt = new Date().toISOString();
 
+    await db.saveMatch(match);
+
     for (const market of match.markets!) {
       market.status = 'SETTLED';
       if (market.type === 'CORRECT_SCORE') {
@@ -68,32 +70,34 @@ export class SettlementService {
     let wonBetsCount = 0;
     let totalPayout = 0;
 
-    for (const bet of db.bets.values()) {
+    const allBets = await db.getBets();
+    for (const bet of allBets) {
       if (bet.status !== 'PENDING') continue;
-      const matchingItems = bet.items.filter((item) => item.matchId === matchId);
+      const matchingItems = bet.items.filter((item: any) => item.matchId === matchId);
       if (matchingItems.length === 0) continue;
 
       for (const item of matchingItems) {
-        const market = match.markets!.find((m) => m.id === item.marketId);
+        const market = match.markets!.find((m: any) => m.id === item.marketId);
         const isCorrectScore = market?.type === 'CORRECT_SCORE' || item.marketName.toLowerCase().includes('correto');
         let isWon = false;
         if (isCorrectScore) {
           if (item.outcome === correctScoreStr) isWon = true;
           else if (item.outcome === 'OTHER' || item.outcome === 'Outro' || item.label.toLowerCase().includes('outro')) {
-            const otherSelections = market?.selections.filter(s => s.outcome !== 'OTHER' && s.outcome !== 'Outro' && !s.label.toLowerCase().includes('outro')) || [];
-            const commonScores = otherSelections.map(s => s.outcome);
+            const otherSelections = market?.selections.filter((s: any) => s.outcome !== 'OTHER' && s.outcome !== 'Outro' && !s.label.toLowerCase().includes('outro')) || [];
+            const commonScores = otherSelections.map((s: any) => s.outcome);
             if (!commonScores.includes(correctScoreStr)) isWon = true;
           }
         } else isWon = item.outcome === winningOutcome;
         item.status = isWon ? 'WON' : 'LOST';
       }
 
-      const hasLostItem = bet.items.some((item) => item.status === 'LOST');
-      const allItemsDecided = bet.items.every((item) => item.status === 'WON' || item.status === 'VOID');
+      const hasLostItem = bet.items.some((item: any) => item.status === 'LOST');
+      const allItemsDecided = bet.items.every((item: any) => item.status === 'WON' || item.status === 'VOID');
 
       if (hasLostItem) {
         bet.status = 'LOST';
         bet.settledAt = new Date().toISOString();
+        await db.saveBet(bet);
         settledBetsCount++;
       } else if (allItemsDecided) {
         let activeOdds = 1.0;
@@ -103,6 +107,8 @@ export class SettlementService {
 
         bet.status = 'WON';
         bet.settledAt = new Date().toISOString();
+        await db.saveBet(bet);
+        
         settledBetsCount++;
         wonBetsCount++;
         totalPayout = Money.add(totalPayout, payout);
@@ -117,7 +123,7 @@ export class SettlementService {
       }
     }
 
-    AuditService.log(adminId, adminEmail, 'SETTLE_MATCH', 'Match', matchId, { status: previousStatus }, {
+    await AuditService.log(adminId, adminEmail, 'SETTLE_MATCH', 'Match', matchId, { status: previousStatus }, {
       status: 'FINISHED',
       homeScore,
       awayScore,
@@ -152,18 +158,23 @@ export class SettlementService {
       for (const sel of market.selections) sel.status = 'VOID';
     }
 
+    await db.saveMatch(match);
+
     let refundedBetsCount = 0;
     let totalRefunded = 0;
 
-    for (const bet of db.bets.values()) {
+    const allBets = await db.getBets();
+    for (const bet of allBets) {
       if (bet.status !== 'PENDING') continue;
-      const item = bet.items.find((i) => i.matchId === matchId);
+      const item = bet.items.find((i: any) => i.matchId === matchId);
       if (!item) continue;
       item.status = 'VOID';
 
       if (bet.type === 'SINGLE') {
         bet.status = 'VOID';
         bet.settledAt = new Date().toISOString();
+        await db.saveBet(bet);
+
         await WalletService.executeTransaction({
           userId: bet.userId,
           type: 'REFUND',
@@ -174,10 +185,12 @@ export class SettlementService {
         refundedBetsCount++;
         totalRefunded = Money.add(totalRefunded, bet.stake);
       } else {
-        const allVoid = bet.items.every((i) => i.status === 'VOID');
+        const allVoid = bet.items.every((i: any) => i.status === 'VOID');
         if (allVoid) {
           bet.status = 'VOID';
           bet.settledAt = new Date().toISOString();
+          await db.saveBet(bet);
+
           await WalletService.executeTransaction({
             userId: bet.userId,
             type: 'REFUND',
@@ -187,11 +200,14 @@ export class SettlementService {
           });
           refundedBetsCount++;
           totalRefunded = Money.add(totalRefunded, bet.stake);
+        } else {
+          // Multi-bet item voided, but bet still pending if other items exist
+          await db.saveBet(bet);
         }
       }
     }
 
-    AuditService.log(adminId, adminEmail, 'CANCEL_MATCH', 'Match', matchId, { status: previousStatus }, { status: 'CANCELLED', reason, refundedBetsCount, totalRefunded }, ip);
+    await AuditService.log(adminId, adminEmail, 'CANCEL_MATCH', 'Match', matchId, { status: previousStatus }, { status: 'CANCELLED', reason, refundedBetsCount, totalRefunded }, ip);
     return { match, refundedBetsCount, totalRefunded };
   }
 }

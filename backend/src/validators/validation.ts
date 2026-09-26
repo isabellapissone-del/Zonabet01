@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { config } from '../config/index.ts';
 
-export const registerSchema = z.object({
+export const registerValidator = z.object({
   name: z.string().min(2, 'Nome completo deve ter pelo menos 2 caracteres'),
   phone: z.string().min(8, 'Número de celular inválido (ex: 841234567 ou +258 84 123 4567)'),
   email: z.string().email('Email inválido').optional().or(z.literal('')),
@@ -13,7 +13,7 @@ export const registerSchema = z.object({
   path: ['confirmPassword'],
 });
 
-export const loginSchema = z.object({
+export const loginValidator = z.object({
   identifier: z.string().optional(),
   email: z.string().optional(),
   phone: z.string().optional(),
@@ -23,7 +23,7 @@ export const loginSchema = z.object({
   path: ['identifier'],
 });
 
-export const createMatchSchema = z.object({
+export const createMatchValidator = z.object({
   competitionId: z.string().min(1, 'Competição é obrigatória'),
   homeTeam: z.string().min(1, 'Equipa da casa é obrigatória'),
   awayTeam: z.string().min(1, 'Equipa visitante é obrigatória'),
@@ -37,7 +37,7 @@ export const createMatchSchema = z.object({
   }),
 });
 
-export const updateOddsSchema = z.object({
+export const updateOddsValidator = z.object({
   odds: z.object({
     home: z.number().gt(1, 'Odd deve ser maior que 1.00'),
     draw: z.number().gt(1, 'Odd deve ser maior que 1.00'),
@@ -45,32 +45,44 @@ export const updateOddsSchema = z.object({
   }),
 });
 
-export const updateMatchStatusSchema = z.object({
+export const updateMatchStatusValidator = z.object({
   status: z.enum(['DRAFT', 'OPEN', 'SUSPENDED', 'CLOSED', 'CANCELLED']),
   reason: z.string().optional(),
 });
 
-export const betItemSchema = z.object({
+export const betItemValidator = z.object({
   matchId: z.string().min(1, 'ID do jogo obrigatório'),
   marketId: z.string().min(1, 'ID do mercado obrigatório'),
   selectionId: z.string().min(1, 'ID da seleção obrigatório'),
 });
 
-export const placeBetSchema = z.object({
-  items: z.array(betItemSchema).min(1, 'Pelo menos uma seleção é necessária'),
+export const placeBetValidator = z.object({
+  items: z.array(betItemValidator).min(1, 'Pelo menos uma seleção é necessária'),
   stake: z.number()
     .gte(config.limits.minimumStake, `A aposta mínima é de ${config.limits.minimumStake} MT (${config.limits.minimumStake} MZN)`)
     .lte(config.limits.maximumStake, `A aposta máxima é de ${config.limits.maximumStake} MZN`),
   idempotencyKey: z.string().optional(),
 });
 
-export const matchResultSchema = z.object({
+export const matchResultValidator = z.object({
   homeScore: z.number().int().min(0, 'Golos não podem ser negativos'),
   awayScore: z.number().int().min(0, 'Golos não podem ser negativos'),
 });
 
-export const balanceAdjustmentSchema = z.object({
+export const balanceAdjustmentValidator = z.object({
   userId: z.string().min(1, 'ID do utilizador é obrigatório'),
   amount: z.number().refine((val) => val !== 0, 'Valor de ajuste não pode ser zero'),
   reason: z.string().min(5, 'Motivo de auditoria é obrigatório (mínimo 5 caracteres)'),
 });
+
+// Aliases for compatibility
+export const registerSchema = registerValidator;
+export const loginSchema = loginValidator;
+export const createMatchSchema = createMatchValidator;
+export const updateOddsSchema = updateOddsValidator;
+export const updateMatchStatusSchema = updateMatchStatusValidator;
+export const betItemSchema = betItemValidator;
+export const placeBetSchema = placeBetValidator;
+export const matchResultSchema = matchResultValidator;
+export const balanceAdjustmentSchema = balanceAdjustmentValidator;
+

@@ -1,0 +1,256 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user account",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "role": { "type": "string", "enum": ["USER", "ADMIN"] },
+        "isBlocked": { "type": "boolean" },
+        "referralCode": { "type": "string" },
+        "referralLink": { "type": "string" },
+        "referredBy": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "email", "phone", "passwordHash", "role", "isBlocked", "createdAt", "updatedAt"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User balance and wallet state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "balance": { "type": "number" },
+        "lockedBalance": { "type": "number" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "balance", "lockedBalance", "updatedAt"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Financial ledger record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "walletId": { "type": "string" },
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["DEPOSIT", "WITHDRAWAL", "BET", "WIN", "REFUND", "ADJUSTMENT"] },
+        "amount": { "type": "number" },
+        "previousBalance": { "type": "number" },
+        "nextBalance": { "type": "number" },
+        "reference": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED", "FAILED"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "walletId", "userId", "type", "amount", "previousBalance", "nextBalance", "reference", "description", "status", "createdAt"]
+    },
+    "Competition": {
+      "title": "Competition",
+      "description": "Sports competition",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "country": { "type": "string" },
+        "code": { "type": "string" },
+        "category": { "type": "string" }
+      },
+      "required": ["id", "name", "country", "code"]
+    },
+    "Team": {
+      "title": "Team",
+      "description": "Sports team",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "shortName": { "type": "string" }
+      },
+      "required": ["id", "name", "shortName"]
+    },
+    "Match": {
+      "title": "Match",
+      "description": "Match event and odds",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "competitionId": { "type": "string" },
+        "competitionName": { "type": "string" },
+        "competitionCategory": { "type": "string" },
+        "homeTeam": { "type": "string" },
+        "awayTeam": { "type": "string" },
+        "kickoffDate": { "type": "string" },
+        "kickoffTime": { "type": "string" },
+        "status": { "type": "string", "enum": ["DRAFT", "OPEN", "SUSPENDED", "CLOSED", "FINISHED", "CANCELLED"] },
+        "homeScore": { "type": "number" },
+        "awayScore": { "type": "number" },
+        "isFeatured": { "type": "boolean" },
+        "description": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "competitionId", "competitionName", "homeTeam", "awayTeam", "kickoffDate", "kickoffTime", "status", "createdAt", "updatedAt"]
+    },
+    "Bet": {
+      "title": "Bet",
+      "description": "Bet slip record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "type": { "type": "string", "enum": ["SINGLE", "MULTIPLE"] },
+        "stake": { "type": "number" },
+        "totalOdds": { "type": "number" },
+        "potentialReturn": { "type": "number" },
+        "status": { "type": "string", "enum": ["PENDING", "WON", "LOST", "VOID"] },
+        "idempotencyKey": { "type": "string" },
+        "settledAt": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "userEmail", "type", "stake", "totalOdds", "potentialReturn", "status", "createdAt"]
+    },
+    "DepositProof": {
+      "title": "DepositProof",
+      "description": "Proof of deposit receipt",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhone": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["MPESA", "EMOLA", "MKESH", "BANK"] },
+        "referenceCode": { "type": "string" },
+        "operatorTxId": { "type": "string" },
+        "receiptFileName": { "type": "string" },
+        "receiptDataUrl": { "type": "string" },
+        "receiptFileSize": { "type": "number" },
+        "notes": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "APPROVED", "REJECTED"] },
+        "reviewedBy": { "type": "string" },
+        "reviewNotes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "userPhone", "userEmail", "amount", "method", "referenceCode", "status", "createdAt", "updatedAt"]
+    },
+    "Referral": {
+      "title": "Referral",
+      "description": "Referral relationship",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "inviterId": { "type": "string" },
+        "inviterName": { "type": "string" },
+        "invitedUserId": { "type": "string" },
+        "invitedUserName": { "type": "string" },
+        "invitedUserPhone": { "type": "string" },
+        "totalBonusEarned": { "type": "number" },
+        "depositsCount": { "type": "number" },
+        "createdAt": { "type": "string" },
+        "lastBonusAt": { "type": "string" }
+      },
+      "required": ["id", "inviterId", "inviterName", "invitedUserId", "invitedUserName", "invitedUserPhone", "totalBonusEarned", "depositsCount", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Admin action log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "adminId": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "entity": { "type": "string" },
+        "entityId": { "type": "string" },
+        "oldValue": { "type": "string" },
+        "newValue": { "type": "string" },
+        "ip": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "adminId", "adminEmail", "action", "entity", "entityId", "timestamp"]
+    },
+    "IdempotencyRecord": {
+      "title": "IdempotencyRecord",
+      "description": "API idempotency cache",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string" },
+        "responseStatus": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["key", "responseStatus", "createdAt"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "System configuration key-value store",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "value": { "type": "string" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/wallets/{userId}": {
+      "schema": "Wallet",
+      "description": "User wallets"
+    },
+    "/wallet_transactions/{txId}": {
+      "schema": "WalletTransaction",
+      "description": "Wallet ledger history"
+    },
+    "/competitions/{compId}": {
+      "schema": "Competition",
+      "description": "Competitions list"
+    },
+    "/teams/{teamId}": {
+      "schema": "Team",
+      "description": "Teams list"
+    },
+    "/matches/{matchId}": {
+      "schema": "Match",
+      "description": "Matches and odds"
+    },
+    "/bets/{betId}": {
+      "schema": "Bet",
+      "description": "User bets"
+    },
+    "/deposit_proofs/{proofId}": {
+      "schema": "DepositProof",
+      "description": "Deposit proofs"
+    },
+    "/referrals/{refId}": {
+      "schema": "Referral",
+      "description": "Referral tracking"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "System audit logs"
+    },
+    "/idempotency_records/{key}": {
+      "schema": "IdempotencyRecord",
+      "description": "Idempotency records"
+    },
+    "/settings/{settingId}": {
+      "schema": "SystemSetting",
+      "description": "Global settings document"
+    }
+  }
+}

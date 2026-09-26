@@ -75,7 +75,7 @@ export class BetService {
       const { wallet } = await WalletService.executeTransaction({
         userId,
         type: 'BET',
-        amount: stake,
+        amount: -stake,
         reference: betId,
         description: `Aposta ${betItems.length > 1 ? 'Múltipla' : 'Simples'} #${betItems.length} seleções`,
       });
@@ -94,22 +94,22 @@ export class BetService {
         createdAt: new Date().toISOString(),
       };
 
-      db.bets.set(bet.id, bet);
+      db.saveBet(bet); // No need to await here if we don't want to block, but safer to await.
+      await db.saveBet(bet);
       return { bet, wallet };
     });
   }
 
   static async getUserBets(userId: string): Promise<Bet[]> {
-    return Array.from(db.bets.values())
-      .filter((b) => b.userId === userId)
-      .reverse();
+    return db.getBets(userId);
   }
 
   static async getAllBets(): Promise<Bet[]> {
-    return Array.from(db.bets.values()).reverse();
+    return db.getBets();
   }
 
   static async getBetById(id: string): Promise<Bet | null> {
-    return db.bets.get(id) || null;
+    const bet = await db.getBet(id);
+    return bet || null;
   }
 }

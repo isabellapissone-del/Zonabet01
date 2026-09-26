@@ -9,7 +9,6 @@ import {
   Copy,
   Check,
   RefreshCw,
-  HardDrive,
   CheckCircle,
   AlertTriangle,
   Lock,
