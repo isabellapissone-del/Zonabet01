@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Bet, WalletTransaction } from '../types.ts';
 import { api } from '../api.ts';
+import { copyToClipboard } from '../utils/clipboard.ts';
 import {
   X,
   User as UserIcon,
@@ -239,10 +240,10 @@ export const UserDetailModal: React.FC<UserDetailModalProps> = ({
           </div>
           <button
             type="button"
-            onClick={() => {
+            onClick={async () => {
               const origin = typeof window !== 'undefined' ? window.location.origin : '';
               const link = user.referralLink || `${origin}/?ref=${user.referralCode || `ZONA${user.phone?.replace(/\D/g, '').slice(-9)}`}`;
-              navigator.clipboard.writeText(link);
+              await copyToClipboard(link);
               notifySuccess('Link individual de registo do jogador copiado com sucesso!');
             }}
             className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0"

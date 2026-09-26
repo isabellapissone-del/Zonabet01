@@ -15,6 +15,9 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
+        devOptions: {
+          enabled: false,
+        },
         includeAssets: ['icon.svg'],
         manifest: {
           id: '/',
@@ -45,6 +48,11 @@ export default defineConfig(() => {
       })
     ],
     base: '/',
+    server: {
+      host: '0.0.0.0',
+      port: 3000,
+      hmr: false,
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

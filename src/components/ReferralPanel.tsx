@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { api } from '../api.ts';
+import { copyToClipboard as safeCopy } from '../utils/clipboard.ts';
 import {
   Gift,
   Copy,
@@ -57,8 +58,8 @@ export const ReferralPanel: React.FC = () => {
   const referralLink = `${origin}/?ref=${userReferralCode}`;
 
   const copyToClipboard = async (text: string, isLink: boolean) => {
-    try {
-      await navigator.clipboard.writeText(text);
+    const success = await safeCopy(text);
+    if (success) {
       if (isLink) {
         setCopiedLink(true);
         setTimeout(() => setCopiedLink(false), 2500);
@@ -66,8 +67,6 @@ export const ReferralPanel: React.FC = () => {
         setCopiedCode(true);
         setTimeout(() => setCopiedCode(false), 2500);
       }
-    } catch (e) {
-      console.error('Falha ao copiar:', e);
     }
   };
 

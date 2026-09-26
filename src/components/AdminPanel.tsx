@@ -16,6 +16,7 @@ import { DEFAULT_MOZ_COMPETITIONS } from '../constants/competitions.ts';
 import { AdjustBalanceModal } from './AdjustBalanceModal.tsx';
 import { UserDetailModal } from './UserDetailModal.tsx';
 import { broadcastSettlement } from '../utils/settlementEvents.ts';
+import { copyToClipboard } from '../utils/clipboard.ts';
 import { AdminDashboardView } from './admin/AdminDashboardView.tsx';
 import { AdminJogadoresView } from './admin/AdminJogadoresView.tsx';
 import { AdminJogosView } from './admin/AdminJogosView.tsx';
@@ -231,12 +232,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
   };
 
   const handleCopySql = async () => {
-    try {
-      await navigator.clipboard.writeText(supabaseSchemaSql);
+    const success = await copyToClipboard(supabaseSchemaSql);
+    if (success) {
       setCopiedSql(true);
       notifySuccess('Script SQL copiado com sucesso! Cole-o no SQL Editor do seu projeto Supabase.');
       setTimeout(() => setCopiedSql(false), 4000);
-    } catch {
+    } else {
       notifyError('Não foi possível copiar para a área de transferência');
     }
   };
@@ -1618,8 +1619,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
                   />
                   <button
                     type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(tempPasswordInput);
+                    onClick={async () => {
+                      await copyToClipboard(tempPasswordInput);
                       setCopiedTempPassword(true);
                       setTimeout(() => setCopiedTempPassword(false), 2500);
                     }}

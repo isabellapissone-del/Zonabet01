@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { User } from '../../types.ts';
 import { api } from '../../api.ts';
+import { copyToClipboard } from '../../utils/clipboard.ts';
 import {
   Users,
   UserPlus,
@@ -468,10 +469,10 @@ export const AdminJogadoresView: React.FC<AdminJogadoresViewProps> = ({
                               {u.referralCode}
                             </span>
                             <button
-                              onClick={() => {
+                              onClick={async () => {
                                 const origin = typeof window !== 'undefined' ? window.location.origin : '';
                                 const link = u.referralLink || `${origin}/?ref=${u.referralCode}`;
-                                navigator.clipboard.writeText(link);
+                                await copyToClipboard(link);
                                 notifySuccess(`Link individual de registo de "${u.name}" copiado!`);
                               }}
                               title="Copiar link de convite único deste jogador"

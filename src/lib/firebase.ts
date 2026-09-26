@@ -12,14 +12,12 @@ export const auth = getAuth(app);
 // Connection test helper
 async function testConnection() {
   try {
-    // Try to get a non-existent doc just to verify path and credentials
-    await getDocFromServer(doc(db, 'system_health', 'connection-test'));
+    // Read publicly accessible global settings document
+    await getDocFromServer(doc(db, 'settings', 'global'));
     console.log('[Firebase] Connection verified.');
   } catch (error: any) {
     if (error.message && error.message.includes('the client is offline')) {
-      console.error("[Firebase] Client is offline. Please check your configuration.");
-    } else {
-      console.warn("[Firebase] Initial connection check:", error.message);
+      console.warn("[Firebase] Client is offline or working locally.");
     }
   }
 }

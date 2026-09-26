@@ -16,7 +16,7 @@ export function createExpressApp() {
   app.use(cors({ origin: true, credentials: true }));
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-  app.use(rateLimiter(200, 60000));
+  app.use('/api', rateLimiter(200, 60000));
 
   // Request logger in dev
   app.use((req, res, next) => {

@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { api } from '../api.ts';
+import { copyToClipboard } from '../utils/clipboard.ts';
 import {
   Smartphone,
   CheckCircle2,
@@ -370,8 +371,8 @@ export const DepositPanel: React.FC<DepositPanelProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(OFFICIAL_EMOLA_NUMBER);
+                  onClick={async () => {
+                    await copyToClipboard(OFFICIAL_EMOLA_NUMBER);
                     setCopiedNumber(true);
                     setTimeout(() => setCopiedNumber(false), 2000);
                   }}
