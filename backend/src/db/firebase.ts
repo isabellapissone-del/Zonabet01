@@ -29,10 +29,14 @@ export interface FirebaseStatus {
 
 class FirebaseService {
   private app: App | null = null;
-  private db: Firestore | null = null;
+  public db: Firestore | null = null;
   private auth: Auth | null = null;
   private hasAdminCredentials = false;
   private initialized = false;
+
+  public get enabled(): boolean {
+    return this.isAvailable();
+  }
 
   constructor() {
     this.init();
@@ -42,7 +46,7 @@ class FirebaseService {
     if (this.initialized) return;
 
     try {
-      const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT;
+      const serviceAccountVar = process.env.FIREBASE_SERVICE_ACCOUNT || process.env.FIREBASE_SERVICE_ACCOUNT_BASE64;
       const projectId = process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || localFirebaseConfig.projectId;
       const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
       const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
