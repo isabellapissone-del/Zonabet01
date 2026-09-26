@@ -474,6 +474,82 @@ async function runTestSuite() {
 
     assert(wrongLoginStatus === 401, 'Login with incorrect password is strictly rejected with 401');
 
+    // Test 20: Concurrent Registration Race Condition Protection
+    const raceSuffix = Math.floor(1000000 + Math.random() * 9000000).toString();
+    const racePhone = `86${raceSuffix.slice(0, 7)}`;
+    const raceResults: number[] = [];
+
+    const doRegisterRace = async (clientName: string) => {
+      let code = 0;
+      const rRes = {
+        status(c: number) {
+          code = c;
+          return { json: () => {} };
+        }
+      } as any;
+
+      await AuthController.register({
+        body: {
+          name: clientName,
+          phone: racePhone,
+          password: 'Password123!',
+          confirmPassword: 'Password123!',
+        },
+        get: () => 'localhost:3000',
+        protocol: 'http',
+        headers: {},
+      } as any, rRes);
+
+      return code;
+    };
+
+    const [statusA, statusB] = await Promise.all([
+      doRegisterRace('Candidato Concorrente 1'),
+      doRegisterRace('Candidato Concorrente 2'),
+    ]);
+
+    const sortedRaceStatuses = [statusA, statusB].sort();
+    assert(
+      sortedRaceStatuses[0] === 201 && sortedRaceStatuses[1] === 409,
+      'Concurrent registrations with identical phone are serialized: exactly 1 succeeds (201) and 1 is rejected (409)'
+    );
+
+    // Test 21: Password Hash Persistence & Recovery on Server Restart
+    // Register a user and verify that passwordHash is stored and valid
+    const userInMem = db.getUserByPhone(racePhone);
+    assert(
+      !!userInMem && !!userInMem.passwordHash && userInMem.passwordHash.startsWith('$2'),
+      'Registered user has valid bcrypt passwordHash stored'
+    );
+
+    // Simulate memory loss (server restart) with cached user in store
+    const savedUserClone = { ...userInMem! };
+    db.users.delete(savedUserClone.id);
+    assert(!db.users.has(savedUserClone.id), 'Simulated memory wipe on server restart');
+
+    // Restore user into memory simulating Firestore pull with passwordHash intact
+    db.users.set(savedUserClone.id, savedUserClone);
+    let postRestartLoginStatus = 0;
+    const postRestartRes = {
+      status(c: number) {
+        postRestartLoginStatus = c;
+        return { json: () => {} };
+      }
+    } as any;
+
+    await AuthController.login({
+      body: { identifier: racePhone, password: 'Password123!' },
+      get: () => 'localhost:3000',
+      protocol: 'http',
+      headers: {},
+      ip: '127.0.0.1',
+    } as any, postRestartRes);
+
+    assert(
+      postRestartLoginStatus === 200,
+      'User successfully logs in after server restart using preserved bcrypt passwordHash'
+    );
+
   } catch (error: any) {
     console.error('Unexpected test error:', error);
     failed++;

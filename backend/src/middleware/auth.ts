@@ -45,22 +45,9 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
 
     // Resiliency: Fallback to Firebase if not in memory (common in serverless/Vercel)
     if (!user && firebaseService.isAvailable()) {
-      const dbFirestore = firebaseService.getDb()!;
-      const doc = await dbFirestore.collection('users').doc(payload.userId).get();
-      if (doc.exists) {
-        const d = doc.data()!;
-        user = {
-          id: d.id,
-          name: d.name,
-          phone: d.phone,
-          email: d.email,
-          passwordHash: d.passwordHash || '',
-          role: d.role,
-          isBlocked: d.status === 'BLOCKED',
-          referralCode: d.referralCode,
-          createdAt: d.createdAt,
-          updatedAt: d.updatedAt
-        };
+      const fbUser = await firebaseService.getUserByIdentifier(payload.userId);
+      if (fbUser) {
+        user = fbUser;
         db.users.set(user.id, user);
       }
     }

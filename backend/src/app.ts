@@ -1,5 +1,6 @@
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import authRoutes from './routes/authRoutes.ts';
 import matchRoutes from './routes/matchRoutes.ts';
 import betRoutes from './routes/betRoutes.ts';
@@ -11,6 +12,16 @@ import { settingsService } from './services/settingsService.ts';
 
 export function createExpressApp() {
   const app = express();
+
+  // Helmet security headers (configured for iframe embed & SPA compatibility)
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      frameguard: false,
+    })
+  );
 
   // Basic security and parsing
   app.use(cors({ origin: true, credentials: true }));

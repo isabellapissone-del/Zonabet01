@@ -48,7 +48,7 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
     function isValidUser(data) {
       return data.keys().hasAll(['id', 'name', 'phone', 'role', 'status', 'balance', 'createdAt', 'updatedAt']) &&
-             data.keys().hasOnly(['id', 'name', 'phone', 'role', 'status', 'balance', 'referralCode', 'referredBy', 'createdAt', 'updatedAt']) &&
+             data.keys().hasOnly(['id', 'name', 'phone', 'email', 'passwordHash', 'role', 'status', 'balance', 'referralCode', 'referredBy', 'createdAt', 'updatedAt']) &&
              data.id is string && data.id.size() <= 100 &&
              data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
              data.phone is string && data.phone.matches('^\\+258\\d{9}$') &&

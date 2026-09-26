@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext.tsx';
 import { safeStorage } from '../utils/storage.ts';
-import { X, Lock, Mail, User, Phone, ShieldCheck, Eye, EyeOff, Sparkles, Gift } from 'lucide-react';
+import { X, Lock, Mail, User, Phone, ShieldCheck, Eye, EyeOff, Sparkles, Gift, CheckCircle2 } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -13,6 +13,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const { login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Form states
@@ -46,6 +47,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSuccessMessage(null);
     setLoading(true);
 
     try {
@@ -55,6 +57,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           throw new Error('Introduza o seu número de celular ou email');
         }
         await login({ identifier, password });
+        onClose();
       } else {
         const cleanName = name.trim();
         const cleanPhone = phone.trim();
@@ -73,7 +76,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         }
 
         if (password !== confirmPassword) {
-          throw new Error('As palavras-passe não coincidem');
+          throw new Error('As senhas não coincidem');
         }
 
         await register({
@@ -83,8 +86,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           confirmPassword,
           referralCode: referralCode.trim() || undefined,
         });
+
+        setSuccessMessage('Conta criada com sucesso.');
+        setTimeout(() => {
+          onClose();
+        }, 1200);
       }
-      onClose();
     } catch (err: any) {
       setError(err.message || 'Erro de autenticação');
     } finally {
@@ -110,7 +117,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         <div className="flex border-b border-slate-800 mb-5 pb-2">
           <button
             id="modal-tab-login"
-            onClick={() => { setMode('login'); setError(null); }}
+            onClick={() => { setMode('login'); setError(null); setSuccessMessage(null); }}
             className={`flex-1 text-center py-2 text-sm font-bold transition-all border-b-2 ${
               mode === 'login'
                 ? 'border-emerald-500 text-emerald-400'
@@ -121,7 +128,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </button>
           <button
             id="modal-tab-register"
-            onClick={() => { setMode('register'); setError(null); }}
+            onClick={() => { setMode('register'); setError(null); setSuccessMessage(null); }}
             className={`flex-1 text-center py-2 text-sm font-bold transition-all border-b-2 ${
               mode === 'register'
                 ? 'border-emerald-500 text-emerald-400'
@@ -152,6 +159,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-medium">
             {error}
+          </div>
+        )}
+
+        {successMessage && (
+          <div className="mb-4 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-bold flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{successMessage}</span>
           </div>
         )}
 

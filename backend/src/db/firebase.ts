@@ -178,6 +178,7 @@ class FirebaseService {
         name: user.name,
         phone: user.phone,
         email: user.email,
+        passwordHash: user.passwordHash,
         role: user.role,
         status: user.isBlocked ? 'BLOCKED' : 'ACTIVE',
         balance: wallet?.balance || 0,
@@ -189,6 +190,69 @@ class FirebaseService {
     } catch (err) {
       console.error('[Firebase Sync] User error:', err);
     }
+  }
+
+  public async getUserByIdentifier(identifier: string): Promise<User | null> {
+    if (!this.db) return null;
+    try {
+      const cleanDigits = identifier.replace(/\D/g, '');
+      let query;
+      if (identifier.includes('@')) {
+        query = this.db.collection('users').where('email', '==', identifier.toLowerCase().trim()).limit(1);
+      } else if (cleanDigits.length >= 8) {
+        const nineDigits = cleanDigits.slice(-9);
+        const variants = [
+          identifier,
+          cleanDigits,
+          `+258${nineDigits}`,
+          `+258 ${nineDigits.slice(0, 2)} ${nineDigits.slice(2, 5)} ${nineDigits.slice(5)}`
+        ];
+        query = this.db.collection('users').where('phone', 'in', variants).limit(1);
+      } else {
+        query = this.db.collection('users').where('id', '==', identifier).limit(1);
+      }
+
+      const snap = await query.get();
+      if (snap.empty) return null;
+      const data = snap.docs[0].data();
+      return {
+        id: data.id,
+        name: data.name,
+        phone: data.phone,
+        email: data.email,
+        passwordHash: data.passwordHash || '',
+        role: data.role || 'USER',
+        isBlocked: data.status === 'BLOCKED',
+        referralCode: data.referralCode,
+        referredBy: data.referredBy,
+        createdAt: data.createdAt,
+        updatedAt: data.updatedAt,
+      };
+    } catch (err) {
+      console.error('[Firebase] Error in getUserByIdentifier:', err);
+      return null;
+    }
+  }
+
+  public async createUserAtomic(user: User): Promise<User> {
+    if (!this.db) return user;
+    const cleanDigits = user.phone.replace(/\D/g, '');
+    const nineDigits = cleanDigits.slice(-9);
+    const variants = [
+      user.phone,
+      cleanDigits,
+      `+258${nineDigits}`,
+      `+258 ${nineDigits.slice(0, 2)} ${nineDigits.slice(2, 5)} ${nineDigits.slice(5)}`
+    ];
+
+    const usersRef = this.db.collection('users');
+    const existingSnap = await usersRef.where('phone', 'in', variants).limit(1).get();
+    if (!existingSnap.empty) {
+      throw new Error('PHONE_ALREADY_EXISTS');
+    }
+
+    await this.syncUser(user);
+    return user;
   }
 
   public async syncWallet(wallet: Wallet): Promise<void> {
@@ -314,7 +378,7 @@ class FirebaseService {
           name: data.name,
           phone: data.phone,
           email: data.email,
-          passwordHash: '', // Firebase Auth handles this
+          passwordHash: data.passwordHash || '',
           role: data.role || 'USER',
           isBlocked: data.status === 'BLOCKED',
           referralCode: data.referralCode,

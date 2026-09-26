@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { Mutex } from 'async-mutex';
 import { db } from '../db/store.ts';
 import { config } from '../config/index.ts';
 import { registerSchema, loginSchema } from '../validators/schemas.ts';
@@ -11,6 +12,17 @@ import type { AuthenticatedRequest } from '../middleware/auth.ts';
 import type { User, AuthTokenPayload } from '../types/index.ts';
 import { firebaseService } from '../db/firebase.ts';
 import { ReferralService } from '../services/referralService.ts';
+
+// Mapa de locks por telefone para evitar race conditions em requisições simultâneas
+const registrationLocks = new Map<string, Mutex>();
+function getRegistrationLock(phoneDigits: string): Mutex {
+  let lock = registrationLocks.get(phoneDigits);
+  if (!lock) {
+    lock = new Mutex();
+    registrationLocks.set(phoneDigits, lock);
+  }
+  return lock;
+}
 
 // Utilitário de normalização e validação de números moçambicanos
 function normalizeMozambicanPhone(rawPhone: string): {
@@ -82,211 +94,213 @@ export class AuthController {
       // Formato internacional estrito sem espaços para o banco: +258XXXXXXXXX
       const formattedPhone = `+258${cleanDigits}`;
 
-      // 2. Verificação de Duplicidade em memória local
-      console.log('[Auth Register] Passo 2: Verificação memória');
-      if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
-        res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-        return;
-      }
+      // Adquire lock exclusivo para este número de telefone para evitar cadastros concorrentes simultâneos
+      const phoneLock = getRegistrationLock(cleanDigits);
+      const releaseLock = await phoneLock.acquire();
 
-      // 3. Verificação de Duplicidade
-      console.log('[Auth Register] Passo 3: Verificação Firebase');
-      if (firebaseService.isAvailable()) {
-        const dbFirestore = firebaseService.getDb()!;
-        const phoneVariations = [cleanDigits, formattedPhone, phoneNorm.formattedPhone];
-        const usersRef = dbFirestore.collection('users');
-        const phoneCheck = await usersRef.where('phone', 'in', phoneVariations).limit(1).get();
-
-        if (!phoneCheck.empty) {
-          res.status(409).json({ error: 'Este número de telefone já está cadastrado no sistema.' });
+      try {
+        // 2. Verificação de Duplicidade em memória local
+        console.log('[Auth Register] Passo 2: Verificação memória');
+        if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
+          res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
           return;
         }
-      } else {
-        console.warn('[Auth Register] Firebase indisponível, a usar verificação de memória.');
-        // Memória já foi verificada em passo anterior (passo 2, linha 85), mas garante consistência
-      }
 
-      // Gerar caixa postal interna se o email não tiver sido fornecido
-      if (!email || email.trim() === '') {
-        email = `${cleanDigits}@zonabet.mz`;
-      } else {
-        if (db.getUserByEmail(email)) {
-          res.status(409).json({ error: 'Já existe uma conta associada a este endereço de email.' });
-          return;
+        // 3. Verificação de Duplicidade Firebase
+        console.log('[Auth Register] Passo 3: Verificação Firebase');
+        if (firebaseService.isAvailable()) {
+          const dbFirestore = firebaseService.getDb()!;
+          const phoneVariations = [cleanDigits, formattedPhone, phoneNorm.formattedPhone];
+          const usersRef = dbFirestore.collection('users');
+          const phoneCheck = await usersRef.where('phone', 'in', phoneVariations).limit(1).get();
+
+          if (!phoneCheck.empty) {
+            res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
+            return;
+          }
+        } else {
+          console.warn('[Auth Register] Firebase indisponível, a usar verificação de memória.');
         }
-      }
 
-      const passwordHash = await bcrypt.hash(password, 10);
-      const userId = `usr-${crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')}`;
+        // Gerar caixa postal interna se o email não tiver sido fornecido
+        if (!email || email.trim() === '') {
+          email = `${cleanDigits}@zonabet.mz`;
+        } else {
+          if (db.getUserByEmail(email)) {
+            res.status(409).json({ error: 'Já existe uma conta associada a este endereço de email.' });
+            return;
+          }
+        }
 
-      const assignedRole: 'USER' = 'USER';
-      const assignedStatus: 'ACTIVE' = 'ACTIVE';
-      const initialBalance = 0.00;
+        const passwordHash = await bcrypt.hash(password, 10);
+        const userId = `usr-${crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex')}`;
 
-      // 4. Tratamento do Código de Convite
-      let referredBy: string | null = null;
-      if (referralCode && referralCode.trim() !== '') {
-        console.log('[Auth Register] Processando código de convite:', referralCode);
-        const cleanRef = referralCode.trim().toUpperCase();
-        const cleanRefDigits = cleanRef.replace(/\D/g, '');
+        const assignedRole: 'USER' = 'USER';
+        const assignedStatus: 'ACTIVE' = 'ACTIVE';
+        const initialBalance = 0.00;
+
+        // 4. Tratamento do Código de Convite
+        let referredBy: string | null = null;
+        if (referralCode && referralCode.trim() !== '') {
+          console.log('[Auth Register] Processando código de convite:', referralCode);
+          const cleanRef = referralCode.trim().toUpperCase();
+          const cleanRefDigits = cleanRef.replace(/\D/g, '');
+          
+          const inviterInMemory = db.getUserByReferralCode(cleanRef);
+
+          if (inviterInMemory) {
+            referredBy = inviterInMemory.id;
+            console.log('[Auth Register] Inviter found in memory:', referredBy);
+          } else if (firebaseService.isAvailable()) {
+            const dbFirestore = firebaseService.getDb()!;
+            const usersRef = dbFirestore.collection('users');
+            const inviterCheck = await usersRef.where('referralCode', '==', cleanRef).limit(1).get();
+            if (!inviterCheck.empty) {
+              referredBy = inviterCheck.docs[0].id;
+              console.log('[Auth Register] Inviter found in Firebase:', referredBy);
+            } else {
+              const inviterPhoneCheck = await usersRef.where('phone', 'in', [cleanRefDigits, `+258${cleanRefDigits}`]).limit(1).get();
+              if (!inviterPhoneCheck.empty) {
+                referredBy = inviterPhoneCheck.docs[0].id;
+                console.log('[Auth Register] Inviter found by phone in Firebase:', referredBy);
+              }
+            }
+          }
+        }
+
+        // 5. Geração de código de indicação individual único
+        let generatedReferralCode = `ZONA${cleanDigits}`;
+        let isUnique = !db.getUserByReferralCode(generatedReferralCode);
+        if (isUnique && firebaseService.isAvailable()) {
+            const dbFirestore = firebaseService.getDb()!;
+            const codeCheck = await dbFirestore.collection('users').where('referralCode', '==', generatedReferralCode).limit(1).get();
+            if (!codeCheck.empty) isUnique = false;
+        }
         
-        const inviterInMemory = db.getUserByReferralCode(cleanRef);
+        if (!isUnique) {
+          generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
+        }
 
-        if (inviterInMemory) {
-          referredBy = inviterInMemory.id;
-          console.log('[Auth Register] Inviter found in memory:', referredBy);
-        } else if (firebaseService.isAvailable()) {
-          // Busca no Firestore
-          const dbFirestore = firebaseService.getDb()!;
-          const usersRef = dbFirestore.collection('users');
-          const inviterCheck = await usersRef.where('referralCode', '==', cleanRef).limit(1).get();
-          if (!inviterCheck.empty) {
-            referredBy = inviterCheck.docs[0].id;
-            console.log('[Auth Register] Inviter found in Firebase:', referredBy);
-          } else {
-            // Tentar por telefone
-            const inviterPhoneCheck = await usersRef.where('phone', 'in', [cleanRefDigits, `+258${cleanRefDigits}`]).limit(1).get();
-            if (!inviterPhoneCheck.empty) {
-              referredBy = inviterPhoneCheck.docs[0].id;
-              console.log('[Auth Register] Inviter found by phone in Firebase:', referredBy);
+        const host = req.get('host') || 'localhost:3000';
+        const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+        const individualReferralLink = `${protocol}://${host}/?ref=${generatedReferralCode}`;
+
+        const newUser: User = {
+          id: userId,
+          name: name.trim(),
+          email,
+          phone: formattedPhone,
+          passwordHash,
+          role: assignedRole,
+          isBlocked: false,
+          referralCode: generatedReferralCode,
+          referralLink: individualReferralLink,
+          referredBy: referredBy || undefined,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        // 6. Gravação primária
+        console.log('[Auth Register] Gravando perfil...', { id: newUser.id, phone: newUser.phone });
+        
+        // Sincronizar com Firebase se possível
+        if (firebaseService.isAvailable()) {
+          try {
+            await firebaseService.syncUser(newUser);
+            const firebaseAuth = firebaseService.getAuth();
+            if (firebaseAuth) {
+              try {
+                await firebaseAuth.createUser({
+                  uid: newUser.id,
+                  phoneNumber: newUser.phone,
+                  displayName: newUser.name,
+                  email: newUser.email,
+                  password: password,
+                });
+              } catch (authErr: any) {
+                console.warn('[Auth Register] Aviso ao criar no Firebase Auth:', authErr.message);
+              }
+            }
+          } catch (insertError: any) {
+            console.error('[Auth Register] Erro Firebase Firestore sync:', insertError);
+          }
+        }
+
+        console.log('[Auth Register] Perfil gravado com sucesso.');
+
+        // 9. Confirmar na memória local
+        db.users.set(userId, newUser);
+
+        // Relacionamento de convite
+        if (referredBy) {
+          let inviter = db.users.get(referredBy);
+          if (!inviter && firebaseService.isAvailable()) {
+            const dbFirestore = firebaseService.getDb()!;
+            const usersRef = dbFirestore.collection('users');
+            const inviterDoc = await usersRef.doc(referredBy).get();
+            if (inviterDoc.exists) {
+              const d = inviterDoc.data()!;
+              inviter = {
+                id: d.id,
+                name: d.name,
+                phone: d.phone,
+                email: d.email,
+                passwordHash: d.passwordHash || '',
+                role: d.role,
+                isBlocked: d.status === 'BLOCKED',
+                referralCode: d.referralCode,
+                createdAt: d.createdAt,
+                updatedAt: d.updatedAt
+              };
             }
           }
-        }
-      }
 
-      // 5. Geração de código de indicação individual único
-      let generatedReferralCode = `ZONA${cleanDigits}`;
-      let isUnique = !db.getUserByReferralCode(generatedReferralCode);
-      if (isUnique && firebaseService.isAvailable()) {
-          const dbFirestore = firebaseService.getDb()!;
-          const codeCheck = await dbFirestore.collection('users').where('referralCode', '==', generatedReferralCode).limit(1).get();
-          if (!codeCheck.empty) isUnique = false;
-      }
-      
-      if (!isUnique) {
-        generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
-      }
-
-      const host = req.get('host') || 'localhost:3000';
-      const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
-      const individualReferralLink = `${protocol}://${host}/?ref=${generatedReferralCode}`;
-
-      const newUser: User = {
-        id: userId,
-        name: name.trim(),
-        email,
-        phone: formattedPhone,
-        passwordHash,
-        role: assignedRole,
-        isBlocked: false,
-        referralCode: generatedReferralCode,
-        referralLink: individualReferralLink,
-        referredBy: referredBy || undefined,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // 6. Gravação primária
-      console.log('[Auth Register] Gravando perfil...', { id: newUser.id, phone: newUser.phone });
-      
-      // Sincronizar com Firebase se possível
-      if (firebaseService.isAvailable()) {
-        try {
-          await firebaseService.syncUser(newUser);
-          const firebaseAuth = firebaseService.getAuth();
-          if (firebaseAuth) {
-            try {
-              await firebaseAuth.createUser({
-                uid: newUser.id,
-                phoneNumber: newUser.phone,
-                displayName: newUser.name,
-                email: newUser.email,
-                password: password,
-              });
-            } catch (authErr: any) {
-              console.warn('[Auth Register] Aviso ao criar no Firebase Auth:', authErr.message);
-            }
-          }
-        } catch (insertError: any) {
-          console.error('[Auth Register] Erro Firebase Firestore sync:', insertError);
-          // Permite continuar para salvar em memória, mas avisa
-        }
-      }
-
-
-      console.log('[Auth Register] Perfil gravado com sucesso.');
-
-      // 9. Confirmar na memória local
-      db.users.set(userId, newUser);
-
-      // Relacionamento de convite
-      if (referredBy) {
-        // Tenta buscar o referenciador
-        let inviter = db.users.get(referredBy);
-        if (!inviter && firebaseService.isAvailable()) {
-          const dbFirestore = firebaseService.getDb()!;
-          const usersRef = dbFirestore.collection('users');
-          const inviterDoc = await usersRef.doc(referredBy).get();
-          if (inviterDoc.exists) {
-            const d = inviterDoc.data()!;
-            inviter = {
-              id: d.id,
-              name: d.name,
-              phone: d.phone,
-              email: d.email,
-              passwordHash: '',
-              role: d.role,
-              isBlocked: d.status === 'BLOCKED',
-              referralCode: d.referralCode,
-              createdAt: d.createdAt,
-              updatedAt: d.updatedAt
-            };
+          if (inviter) {
+            db.addReferral({
+              id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
+              inviterId: inviter.id,
+              inviterName: inviter.name,
+              invitedUserId: newUser.id,
+              invitedUserName: newUser.name,
+              invitedUserPhone: newUser.phone,
+              totalBonusEarned: 0,
+              depositsCount: 0,
+              createdAt: new Date().toISOString(),
+            });
           }
         }
 
-        if (inviter) {
-          db.addReferral({
-            id: `ref-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`,
-            inviterId: inviter.id,
-            inviterName: inviter.name,
-            invitedUserId: newUser.id,
-            invitedUserName: newUser.name,
-            invitedUserPhone: newUser.phone,
-            totalBonusEarned: 0,
-            depositsCount: 0,
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
+        // Inicializar carteira
+        const wallet = await WalletService.getWallet(userId);
+        wallet.balance = initialBalance;
 
-      // Inicializar carteira
-      const wallet = await WalletService.getWallet(userId);
-      wallet.balance = initialBalance;
-
-      const tokenPayload: AuthTokenPayload = {
-        userId: newUser.id,
-        email: newUser.email,
-        name: newUser.name,
-        role: newUser.role,
-      };
-
-      const token = jwt.sign(tokenPayload, config.jwtSecret, { expiresIn: '7d' });
-
-      res.status(201).json({
-        message: 'Registo efetuado com sucesso!',
-        token,
-        user: {
-          id: newUser.id,
-          name: newUser.name,
+        const tokenPayload: AuthTokenPayload = {
+          userId: newUser.id,
           email: newUser.email,
-          phone: newUser.phone,
+          name: newUser.name,
           role: newUser.role,
-          balance: wallet.balance,
-          referralCode: newUser.referralCode,
-          referralLink: newUser.referralLink || individualReferralLink,
-          referredBy: newUser.referredBy,
-        },
-      });
+        };
+
+        const token = jwt.sign(tokenPayload, config.jwtSecret, { expiresIn: '7d' });
+
+        res.status(201).json({
+          message: 'Registo efetuado com sucesso!',
+          token,
+          user: {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            phone: newUser.phone,
+            role: newUser.role,
+            balance: wallet.balance,
+            referralCode: newUser.referralCode,
+            referralLink: newUser.referralLink || individualReferralLink,
+            referredBy: newUser.referredBy,
+          },
+        });
+      } finally {
+        releaseLock();
+      }
     } catch (globalErr: any) {
       console.error('[Auth Register] Erro crítico inesperado no fluxo de cadastro:', {
         message: globalErr.message,
@@ -318,36 +332,9 @@ export class AuthController {
     // Fallback to Firebase if not in memory
     if (!user && firebaseService.isAvailable()) {
       console.log(`[Auth] Utilizador ${identifier} não encontrado em memória. A procurar no Firebase...`);
-      const dbFirestore = firebaseService.getDb()!;
-      const cleanDigits = identifier.replace(/\D/g, '');
-      
-      let query;
-      if (identifier.includes('@')) {
-        query = dbFirestore.collection('users').where('email', '==', identifier).limit(1);
-      } else if (cleanDigits.length >= 8) {
-        query = dbFirestore.collection('users').where('phone', 'in', [identifier, `+258${cleanDigits.slice(-9)}`]).limit(1);
-      } else {
-        query = dbFirestore.collection('users').where('id', '==', identifier).limit(1);
-      }
-
-      const snap = await query.get();
-      if (!snap.empty) {
-        const data = snap.docs[0].data();
-        // Nota: no Firebase guardamos o hash no doc se não estivermos a usar Auth nativo para tudo
-        // Mas para migração segura, vamos tentar obter do doc
-        user = {
-          id: data.id,
-          name: data.name,
-          phone: data.phone,
-          email: data.email,
-          passwordHash: data.passwordHash || '', // Idealmente migrado do Supabase ou gerado no primeiro login
-          role: data.role,
-          isBlocked: data.status === 'BLOCKED',
-          referralCode: data.referralCode,
-          referredBy: data.referredBy,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
-        };
+      const fbUser = await firebaseService.getUserByIdentifier(identifier);
+      if (fbUser) {
+        user = fbUser;
         db.users.set(user.id, user);
         await WalletService.getWallet(user.id);
       }
@@ -426,25 +413,10 @@ export class AuthController {
     // Resiliency: If user not in memory (server restart), pull from Firebase
     if (!user && firebaseService.isAvailable()) {
       console.log(`[Auth] Utilizador ${req.user.userId} não encontrado em memória. A tentar recuperar do Firebase...`);
-      const dbFirestore = firebaseService.getDb()!;
-      const doc = await dbFirestore.collection('users').doc(req.user.userId).get();
-      if (doc.exists) {
-        const data = doc.data()!;
-        user = {
-          id: data.id,
-          name: data.name,
-          phone: data.phone,
-          email: data.email,
-          passwordHash: data.passwordHash || '',
-          role: data.role,
-          isBlocked: data.status === 'BLOCKED',
-          referralCode: data.referralCode,
-          referredBy: data.referredBy,
-          createdAt: data.createdAt,
-          updatedAt: data.updatedAt
-        };
+      const fbUser = await firebaseService.getUserByIdentifier(req.user.userId);
+      if (fbUser) {
+        user = fbUser;
         db.users.set(user.id, user);
-        // Also ensure wallet is in memory
         await WalletService.getWallet(user.id);
       }
     }
