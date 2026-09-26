@@ -20,7 +20,7 @@ export interface IdempotencyRecord {
   createdAt: string;
 }
 
-class DatabaseStore {
+export class DataStore {
   public users: Map<string, User> = new Map();
   public wallets: Map<string, Wallet> = new Map(); // keyed by userId
   public transactions: WalletTransaction[] = [];
@@ -102,75 +102,86 @@ class DatabaseStore {
         code: 'CDN',
         category: 'DISTRITAL',
       },
-      {
-        id: 'comp-dist-marromeu',
-        name: 'Campeonato Distrital de Marromeu',
-        country: 'Distrito de Marromeu, Sofala',
-        code: 'CDM',
-        category: 'DISTRITAL',
-      },
-      {
-        id: 'comp-dist-muanza',
-        name: 'Campeonato Distrital de Muanza',
-        country: 'Distrito de Muanza, Sofala',
-        code: 'CDMU',
-        category: 'DISTRITAL',
-      },
-      {
-        id: 'comp-dist-cheringoma',
-        name: 'Campeonato Distrital de Cheringoma',
-        country: 'Distrito de Cheringoma, Sofala',
-        code: 'CDCH',
-        category: 'DISTRITAL',
-      },
     ];
 
-    // 2. Seed Teams (Clubes Moçambicanos)
+    // 2. Seed Times
     this.teams = [
       // Moçambola
-      { id: 'team-1', name: 'Black Bulls', shortName: 'ABB' },
-      { id: 'team-2', name: 'Ferroviário de Maputo', shortName: 'CFM' },
-      { id: 'team-3', name: 'Desportivo de Nacala', shortName: 'NAC' },
-      { id: 'team-4', name: 'Costa do Sol', shortName: 'CDS' },
-      { id: 'team-5', name: 'Ferroviário da Beira', shortName: 'CFB' },
-      { id: 'team-6', name: 'Clube de Chibuto', shortName: 'CHI' },
-      { id: 'team-7', name: 'UD Songo', shortName: 'UDS' },
-      { id: 'team-8', name: 'Ferroviário de Nampula', shortName: 'CFN' },
-      { id: 'team-9', name: 'Textáfrica de Chimoio', shortName: 'TEX' },
-      { id: 'team-10', name: 'Baía de Pemba FC', shortName: 'BAP' },
-      { id: 'team-11', name: 'Brera Tchumene FC', shortName: 'BRE' },
-      // Campeonatos Provinciais
-      { id: 'team-12', name: 'Angoche FC', shortName: 'ANG' },
-      { id: 'team-13', name: 'Mecuburi FC', shortName: 'MEC' },
-      { id: 'team-14', name: 'Liga Desportiva de Sofala', shortName: 'LDS' },
-      { id: 'team-15', name: 'Sporting Clube da Beira', shortName: 'SCB' },
-      { id: 'team-16', name: 'Pipeline da Beira', shortName: 'PIP' },
-      { id: 'team-17', name: 'Estrela Vermelha da Beira', shortName: 'EVB' },
-      { id: 'team-18', name: 'Palmeiras de Púnguè', shortName: 'PAL' },
-      { id: 'team-19', name: 'Chingale de Tete', shortName: 'CHT' },
-      // Campeonatos Distritais
-      { id: 'team-20', name: 'Estrela Vermelha', shortName: 'EV' },
-      { id: 'team-21', name: 'União de Beira', shortName: 'UB' },
-      { id: 'team-22', name: 'Munhava Futebol Clube', shortName: 'MFC' },
-      { id: 'team-23', name: 'Manga Sport Clube', shortName: 'MSC' },
-      { id: 'team-24', name: 'Atlético Clube do Dondo', shortName: 'ACD' },
-      { id: 'team-25', name: 'Desportivo de Nhamatanda', shortName: 'DNH' },
-      { id: 'team-26', name: 'Marromeu FC', shortName: 'MAR' },
-      { id: 'team-27', name: 'Búzi Futebol Clube', shortName: 'BFC' },
-      // Distrito de Muanza
-      { id: 'team-28', name: 'Ferroviário de Muanza', shortName: 'CFM-MZ' },
-      { id: 'team-29', name: 'Desportivo de Muanza', shortName: 'DMU' },
-      // Distrito de Cheringoma (Inhaminga)
-      { id: 'team-30', name: 'Águias de Inhaminga', shortName: 'AIN' },
-      { id: 'team-31', name: 'União Desportiva de Cheringoma', shortName: 'UDC' },
+      { id: 'team-costa-do-sol', name: 'Costa do Sol', shortName: 'CDS' },
+      { id: 'team-ferroviario-maputo', name: 'Ferroviário de Maputo', shortName: 'FMA' },
+      { id: 'team-ferroviario-beira', name: 'Ferroviário da Beira', shortName: 'FBE' },
+      { id: 'team-black-bulls', name: 'Associação Black Bulls', shortName: 'ABB' },
+      { id: 'team-ud-songo', name: 'UD Songo', shortName: 'UDS' },
+      { id: 'team-ferroviario-nampula', name: 'Ferroviário de Nampula', shortName: 'FNA' },
+      { id: 'team-baia-pemba', name: 'Baía de Pemba FC', shortName: 'BAP' },
+      { id: 'team-brera-tchumene', name: 'Brera Tchumene FC', shortName: 'BRE' },
+
+      // Sofala
+      { id: 'team-estevao-beira', name: 'Estêvão Futebol Clube da Beira', shortName: 'EFB' },
+      { id: 'team-textafrica-chimoio', name: 'Textáfrica de Chimoio', shortName: 'TEX' },
+      { id: 'team-liga-desportiva-sofal', name: 'Liga Desportiva de Sofala', shortName: 'LDS' },
+      { id: 'team-pipas-beira', name: 'Pipas FC da Beira', shortName: 'PIP' },
+      { id: 'team-palmeiras-beira', name: 'Palmeiras de Beira', shortName: 'PAL' },
+      { id: 'team-têxtil-púnguè', name: 'Clube Desportivo Têxtil do Púnguè', shortName: 'TEX' },
+
+      // Manica
+      { id: 'team-manica-fc', name: 'Manica Futebol Clube', shortName: 'MFC' },
+      { id: 'team-soalpo-fc', name: 'Soalpo FC de Chimoio', shortName: 'SOA' },
+
+      // Nampula
+      { id: 'team-sporting-nampula', name: 'Sporting Clube de Nampula', shortName: 'SCN' },
+      { id: 'team-desportivo-nampula', name: 'Desportivo de Nampula', shortName: 'DEN' },
+
+      // Maputo Provincial
+      { id: 'team-desportivo-maputo', name: 'Grupo Desportivo de Maputo', shortName: 'GDM' },
+      { id: 'team-maxaquene', name: 'Clube de Desportos do Maxaquene', shortName: 'MAX' },
+
+      // Distrital Beira
+      { id: 'team-munhava-fc', name: 'Munhava FC da Beira', shortName: 'MUN' },
+      { id: 'team-manga-sporting', name: 'Manga Sporting da Beira', shortName: 'MAN' },
+      { id: 'team-chota-fc', name: 'Chota Futebol Clube', shortName: 'CHO' },
+      { id: 'team-estoril-beira', name: 'Estoril FC da Beira', shortName: 'EST' },
+
+      // Distrital Dondo
+      { id: 'team-dondo-united', name: 'Dondo United', shortName: 'DOU' },
+      { id: 'team-mafadzi-dondo', name: 'Mafadzi FC do Dondo', shortName: 'MAF' },
+
+      // Distrital Nhamatanda
+      { id: 'team-nhamatanda-clube', name: 'Clube Municipal de Nhamatanda', shortName: 'CMN' },
+      { id: 'team-lamego-fc', name: 'Lamego FC de Nhamatanda', shortName: 'LAM' },
     ];
 
-    // 3. Seed Users
-    // Super Admin 1: jmachesso / 872344381 (Super Administrador ZONABET)
+    // 3. Seed Users & Wallets
+    const adminPasswordHash = bcrypt.hashSync('Admin123!ChangeMe', 10);
     const superAdminPasswordHash = bcrypt.hashSync('872344381', 10);
+    const admin2PasswordHash = bcrypt.hashSync('872344381', 10);
+
+    const adminUser: User = {
+      id: 'usr-admin-01',
+      name: 'Administrador ZONABET',
+      email: 'admin@example.com',
+      phone: '+258840000001',
+      passwordHash: adminPasswordHash,
+      role: 'ADMIN',
+      isBlocked: false,
+      referralCode: 'ZONAADMIN',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.users.set(adminUser.id, adminUser);
+
+    const adminWallet: Wallet = {
+      id: 'wal-admin-01',
+      userId: adminUser.id,
+      balance: 0.00,
+      lockedBalance: 0,
+      updatedAt: new Date().toISOString(),
+    };
+    this.wallets.set(adminUser.id, adminWallet);
+
     const superAdminUser: User = {
       id: 'usr-superadmin-01',
-      name: 'jmachesso',
+      name: 'Super Administrador (Jaime Machesso)',
       email: 'jmachesso@zonabet.co.mz',
       phone: '+258872344381',
       passwordHash: superAdminPasswordHash,
@@ -191,12 +202,10 @@ class DatabaseStore {
     };
     this.wallets.set(superAdminUser.id, superAdminWallet);
 
-    // Super Admin 2 (User account for isapsiqui377@gmail.com & admin@example.com)
-    const admin2PasswordHash = bcrypt.hashSync('Admin123!ChangeMe', 10);
     const admin2User: User = {
       id: 'usr-superadmin-02',
-      name: 'Gestor Geral ZONABET',
-      email: 'admin@example.com',
+      name: 'Administrador Secundário ZONABET',
+      email: 'admin2@zonabet.co.mz',
       phone: '+258872344380',
       passwordHash: admin2PasswordHash,
       role: 'ADMIN',
@@ -236,9 +245,6 @@ class DatabaseStore {
       lockedBalance: 0,
       updatedAt: new Date().toISOString(),
     });
-
-    // 4. Jogos gerenciados manualmente pelo administrador (inicia limpo)
-    // Sem jogos mock ou odds calculadas automaticamente.
   }
 
   // Helper getters
@@ -258,7 +264,6 @@ class DatabaseStore {
     for (const user of this.users.values()) {
       if (!user.phone) continue;
       const userDigits = user.phone.replace(/\D/g, '');
-      // Match exact digits or suffix of 9 Mozambican digits (e.g. 841234567)
       if (
         userDigits === targetDigits ||
         (targetDigits.length >= 8 && userDigits.endsWith(targetDigits.slice(-9))) ||
@@ -275,18 +280,15 @@ class DatabaseStore {
     if (trimmed.includes('@')) {
       return this.getUserByEmail(trimmed);
     }
-    // Try by phone first
     const byPhone = this.getUserByPhone(trimmed);
     if (byPhone) return byPhone;
 
-    // Try by username / name exact or case-insensitive match
     for (const user of this.users.values()) {
       if (user.name && user.name.toLowerCase() === trimmed.toLowerCase()) {
         return user;
       }
     }
 
-    // Fallback to email in case identifier is an email without @ or username
     return this.getUserByEmail(trimmed);
   }
 
@@ -414,7 +416,22 @@ class DatabaseStore {
       referral.lastBonusAt = new Date().toISOString();
     }
   }
+
+  public clear(): void {
+    this.users.clear();
+    this.wallets.clear();
+    this.transactions = [];
+    this.matches.clear();
+    this.bets.clear();
+    this.auditLogs = [];
+    this.depositProofs = [];
+    this.referrals = [];
+    this.idempotencyRecords.clear();
+    this.initialized = false;
+    this.seed();
+  }
 }
 
-export const db = new DatabaseStore();
+export const db = new DataStore();
 export const dbStore = db;
+export const store = db;

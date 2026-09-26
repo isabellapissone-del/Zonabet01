@@ -1,12 +1,11 @@
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import type { MarketRisk, OutcomeRisk, RiskOverview } from '../types/index.ts';
 import { settingsService } from './settingsService.ts';
-import { supabaseService } from '../db/supabase.ts';
 import { MatchService } from './matchService.ts';
 
 export class RiskService {
   /**
-   * Generates a real-time risk overview by aggregating all pending bets from Supabase
+   * Generates a real-time risk overview by aggregating all pending bets from MemoryStore
    */
   static async getRiskOverview(): Promise<RiskOverview> {
     const settings = await settingsService.getSettings();
@@ -14,16 +13,7 @@ export class RiskService {
     const highThresholdPct = settings.riskHighThresholdPct || 80;
     const mediumThresholdPct = settings.riskMediumThresholdPct || 50;
 
-    const client = supabaseService.getClient();
-    let pendingBets: any[] = [];
-    
-    if (client) {
-      const { data } = await client
-        .from('bets')
-        .select('*')
-        .eq('status', 'PENDING');
-      if (data) pendingBets = data;
-    }
+    const pendingBets = Array.from(db.bets.values()).filter(b => b.status === 'PENDING');
 
     let totalTurnover = 0;
     let totalPossiblePayout = 0;
@@ -37,12 +27,12 @@ export class RiskService {
       }
     >();
 
-    // Process bets from Supabase
+    // Process bets from MemoryStore
     for (const b of pendingBets) {
       totalTurnover += Number(b.stake);
-      totalPossiblePayout += Number(b.potential_win);
+      totalPossiblePayout += Number(b.potentialReturn);
 
-      const selections = b.selections || [];
+      const selections = b.items || [];
       for (const item of selections) {
         let entry = marketMap.get(item.marketId);
         if (!entry) {
@@ -202,20 +192,9 @@ export class RiskService {
     }
 
     const today = new Date().toISOString().split('T')[0];
-    const client = supabaseService.getClient();
-    let userTotalStakeToday = 0;
-    
-    if (client) {
-      const { data } = await client
-        .from('bets')
-        .select('stake')
-        .eq('user_id', params.userId)
-        .gte('placed_at', `${today}T00:00:00Z`);
-      
-      if (data) {
-        userTotalStakeToday = data.reduce((acc, b) => acc + Number(b.stake), 0);
-      }
-    }
+    const userTotalStakeToday = Array.from(db.bets.values())
+      .filter(b => b.userId === params.userId && b.createdAt.startsWith(today))
+      .reduce((acc, b) => acc + Number(b.stake), 0);
 
     if (userTotalStakeToday + params.stake > settings.maxDailyStakePerUser) {
       throw new Error(`Atingiu o limite diário de apostas por usuário (${settings.maxDailyStakePerUser.toLocaleString()} MT). Stake atual hoje: ${userTotalStakeToday.toLocaleString()} MT.`);

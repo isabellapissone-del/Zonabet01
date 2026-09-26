@@ -31,16 +31,7 @@ interface AdminConfiguracoesViewProps {
   onUpdateSettings: (newSettings: Partial<SystemSettings>) => Promise<void>;
   loadingSettings?: boolean;
   auditLogs: AuditLog[];
-  supabaseStatus: any;
-  supabaseSchemaSql: string;
-  syncingSupabase: boolean;
-  pullingSupabase: boolean;
-  copiedSql: boolean;
-  handleSyncToSupabase: () => Promise<void>;
-  handlePullFromSupabase: () => Promise<void>;
-  handleCopySql: () => Promise<void>;
   onResetAllBalances: () => Promise<void>;
-  onRefreshSupabaseStatus?: () => Promise<void>;
 }
 
 export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
@@ -49,20 +40,9 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
   onUpdateSettings,
   loadingSettings = false,
   auditLogs,
-  supabaseStatus,
-  supabaseSchemaSql,
-  syncingSupabase,
-  pullingSupabase,
-  copiedSql,
-  handleSyncToSupabase,
-  handlePullFromSupabase,
-  handleCopySql,
   onResetAllBalances,
-  onRefreshSupabaseStatus,
 }) => {
-  const [subTab, setSubTab] = useState<
-    'taxa' | 'limites' | 'whatsapp' | 'contas' | 'auditoria' | 'supabase' | 'manutencao'
-  >('taxa');
+  const [subTab, setSubTab] = useState<'taxa' | 'limites' | 'whatsapp' | 'contas' | 'auditoria' | 'manutencao'>('taxa');
 
   // Form states initialized from settings prop
   const [feePct, setFeePct] = useState('5.0');
@@ -236,7 +216,6 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
             {subTab === 'whatsapp' && 'Botão de Apoio WhatsApp'}
             {subTab === 'contas' && 'Canais de Pagamento & e-Mola'}
             {subTab === 'auditoria' && `Registo Central de Auditoria (${auditLogs.length})`}
-            {subTab === 'supabase' && 'Supabase Cloud & Base de Dados'}
             {subTab === 'manutencao' && 'Manutenção & Limpeza do Sistema'}
           </span>
         </div>
@@ -301,18 +280,6 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
           >
             <FileText className="w-3.5 h-3.5" />
             <span>Auditoria ({auditLogs.length})</span>
-          </button>
-
-          <button
-            onClick={() => setSubTab('supabase')}
-            className={`px-3 py-1.5 rounded-xl font-bold flex items-center gap-1.5 transition-all ${
-              subTab === 'supabase'
-                ? 'bg-slate-200 text-slate-950 shadow'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-750 border border-slate-700'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>Supabase Cloud</span>
           </button>
 
           <button
@@ -825,195 +792,6 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
         </div>
       )}
 
-      {/* ================= SUB-TAB 6: SUPABASE ================= */}
-      {subTab === 'supabase' && (
-        <div className="space-y-5">
-          {/* Status Card */}
-          <div className="p-5 bg-slate-800/90 border border-slate-700/80 rounded-2xl space-y-4">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-700/60">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 ${
-                    supabaseStatus?.connected
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : supabaseStatus?.isConfigured
-                      ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                      : 'bg-slate-700/50 text-slate-400 border border-slate-600/40'
-                  }`}
-                >
-                  <Database className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-black text-white">Ligação Supabase Cloud (PostgreSQL)</h3>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        supabaseStatus?.connected
-                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                          : supabaseStatus?.isConfigured
-                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                          : 'bg-slate-700 text-slate-300'
-                      }`}
-                    >
-                      {supabaseStatus?.connected
-                        ? '🟢 Conectado'
-                        : supabaseStatus?.isConfigured
-                        ? '🟠 Configurado (Sem Tabelas)'
-                        : '⚪ Modo em Memória (Offline)'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {supabaseStatus?.connected
-                      ? 'A aplicação está sincronizada em tempo real com a sua base de dados Supabase na nuvem.'
-                      : supabaseStatus?.isConfigured
-                      ? 'Chaves detetadas. Execute o script SQL no Supabase para inicializar as tabelas.'
-                      : 'A operar com armazenamento local/em memória. Configure as variáveis para persistência permanente.'}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {onRefreshSupabaseStatus && (
-                  <button
-                    onClick={onRefreshSupabaseStatus}
-                    className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-600"
-                    title="Verificar ligação"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Verificar</span>
-                  </button>
-                )}
-                <button
-                  onClick={handleSyncToSupabase}
-                  disabled={syncingSupabase}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${syncingSupabase ? 'animate-spin' : ''}`} />
-                  <span>Enviar para Supabase</span>
-                </button>
-                <button
-                  onClick={handlePullFromSupabase}
-                  disabled={pullingSupabase}
-                  className="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-650 text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-600 disabled:opacity-50"
-                >
-                  <HardDrive className="w-3.5 h-3.5" />
-                  <span>Restaurar do Supabase</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Connection Variables Details */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
-                <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold">
-                  <ExternalLink className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Endpoint Supabase</span>
-                </div>
-                <p className="text-xs font-mono text-white truncate">
-                  {supabaseStatus?.url || 'Não configurado (ex: https://xyz.supabase.co)'}
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
-                <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold">
-                  <Key className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Chave Anónima (Anon)</span>
-                </div>
-                <p className="text-xs font-mono">
-                  {supabaseStatus?.hasAnonKey ? (
-                    <span className="text-emerald-400 font-bold">✅ Configurada</span>
-                  ) : (
-                    <span className="text-slate-500">Pendente de configuração</span>
-                  )}
-                </p>
-              </div>
-
-              <div className="p-3 bg-slate-900/80 rounded-xl border border-slate-800 space-y-1">
-                <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Service Role Key (Escrita)</span>
-                </div>
-                <p className="text-xs font-mono">
-                  {supabaseStatus?.hasServiceKey ? (
-                    <span className="text-emerald-400 font-bold">✅ Configurada</span>
-                  ) : (
-                    <span className="text-slate-500">Pendente de configuração</span>
-                  )}
-                </p>
-              </div>
-            </div>
-
-            {supabaseStatus?.error && (
-              <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-xl flex items-start gap-2.5 text-xs text-rose-300">
-                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold">Aviso do Supabase:</span> {supabaseStatus.error}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Guide Steps */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-black flex items-center justify-center border border-emerald-500/30">
-                  1
-                </span>
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Criar Projeto Supabase</h4>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Acesse <strong className="text-slate-200">supabase.com</strong>, crie um projeto gratuito e aceda a <em>Project Settings → API</em> para obter o seu <strong>Project URL</strong> e as chaves <strong>anon public</strong> e <strong>service_role</strong>.
-              </p>
-            </div>
-
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-black flex items-center justify-center border border-emerald-500/30">
-                  2
-                </span>
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Definir Variáveis</h4>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                No menu <strong className="text-slate-200">Settings</strong> do AI Studio (ou no ficheiro <code className="text-emerald-400">.env</code>), preencha <code className="text-slate-300">SUPABASE_URL</code>, <code className="text-slate-300">SUPABASE_ANON_KEY</code> e <code className="text-slate-300">SUPABASE_SERVICE_ROLE_KEY</code>.
-              </p>
-            </div>
-
-            <div className="p-4 bg-slate-800/60 border border-slate-700/60 rounded-xl space-y-2">
-              <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-black flex items-center justify-center border border-emerald-500/30">
-                  3
-                </span>
-                <h4 className="text-xs font-bold text-white uppercase tracking-wider">Executar Schema SQL</h4>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Copie o script DDL abaixo, cole-o no <strong>SQL Editor</strong> do Supabase e clique em <strong>Run</strong>. Depois, clique em <strong>"Enviar para Supabase"</strong> acima.
-              </p>
-            </div>
-          </div>
-
-          {/* SQL Snippet */}
-          <div className="p-4 bg-slate-900 rounded-xl border border-slate-800 space-y-2.5">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span className="text-xs text-slate-300 font-bold font-mono">Script SQL DDL (Tabelas ZONABET):</span>
-              </div>
-              <button
-                onClick={handleCopySql}
-                className="px-3 py-1 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border border-emerald-500/30"
-              >
-                {copiedSql ? <Check className="w-3.5 h-3.5 text-emerald-300" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedSql ? 'Copiado para a Área de Transferência!' : 'Copiar DDL SQL'}</span>
-              </button>
-            </div>
-            <pre className="p-3.5 bg-slate-950 rounded-lg text-[11px] text-slate-400 font-mono max-h-52 overflow-y-auto leading-relaxed border border-slate-800/60 selection:bg-emerald-900">
-              {supabaseSchemaSql || '-- Carregando schema SQL...'}
-            </pre>
-          </div>
-        </div>
-      )}
-
       {/* ================= SUB-TAB 7: MANUTENÇÃO ================= */}
       {subTab === 'manutencao' && (
         <div className="max-w-2xl mx-auto space-y-5">
@@ -1035,7 +813,7 @@ export const AdminConfiguracoesView: React.FC<AdminConfiguracoesViewProps> = ({
                 <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
                 <div className="text-xs text-rose-200 space-y-1">
                   <p className="font-bold uppercase tracking-wider text-rose-300">⚠️ Ação Irreversível</p>
-                  <p>Ao confirmar, todos os saldos atuais no sistema (Supabase e In-Memory) serão zerados.</p>
+                  <p>Ao confirmar, todos os saldos atuais no sistema serão zerados.</p>
                   <p>Um registo de auditoria será criado para esta operação global.</p>
                 </div>
               </div>

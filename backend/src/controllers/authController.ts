@@ -3,14 +3,13 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Mutex } from 'async-mutex';
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import { config } from '../config/index.ts';
 import { registerSchema, loginSchema } from '../validators/schemas.ts';
 import { WalletService } from '../services/walletService.ts';
 import { AuditService } from '../services/auditService.ts';
 import type { AuthenticatedRequest } from '../middleware/auth.ts';
 import type { User, AuthTokenPayload } from '../types/index.ts';
-import { firebaseService } from '../db/firebase.ts';
 import { ReferralService } from '../services/referralService.ts';
 
 // Mapa de locks por telefone para evitar race conditions em requisições simultâneas
@@ -99,27 +98,11 @@ export class AuthController {
       const releaseLock = await phoneLock.acquire();
 
       try {
-        // 2. Verificação de Duplicidade em memória local
-        console.log('[Auth Register] Passo 2: Verificação memória');
+        // 3. Verificação de Duplicidade (Memória)
+        console.log('[Auth Register] Passo 3: Verificação memória');
         if (db.getUserByPhone(cleanDigits) || db.getUserByPhone(formattedPhone)) {
           res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
           return;
-        }
-
-        // 3. Verificação de Duplicidade Firebase
-        console.log('[Auth Register] Passo 3: Verificação Firebase');
-        if (firebaseService.isAvailable()) {
-          const dbFirestore = firebaseService.getDb()!;
-          const phoneVariations = [cleanDigits, formattedPhone, phoneNorm.formattedPhone];
-          const usersRef = dbFirestore.collection('users');
-          const phoneCheck = await usersRef.where('phone', 'in', phoneVariations).limit(1).get();
-
-          if (!phoneCheck.empty) {
-            res.status(409).json({ error: 'Este número de telefone já está cadastrado.' });
-            return;
-          }
-        } else {
-          console.warn('[Auth Register] Firebase indisponível, a usar verificação de memória.');
         }
 
         // Gerar caixa postal interna se o email não tiver sido fornecido
@@ -151,31 +134,12 @@ export class AuthController {
           if (inviterInMemory) {
             referredBy = inviterInMemory.id;
             console.log('[Auth Register] Inviter found in memory:', referredBy);
-          } else if (firebaseService.isAvailable()) {
-            const dbFirestore = firebaseService.getDb()!;
-            const usersRef = dbFirestore.collection('users');
-            const inviterCheck = await usersRef.where('referralCode', '==', cleanRef).limit(1).get();
-            if (!inviterCheck.empty) {
-              referredBy = inviterCheck.docs[0].id;
-              console.log('[Auth Register] Inviter found in Firebase:', referredBy);
-            } else {
-              const inviterPhoneCheck = await usersRef.where('phone', 'in', [cleanRefDigits, `+258${cleanRefDigits}`]).limit(1).get();
-              if (!inviterPhoneCheck.empty) {
-                referredBy = inviterPhoneCheck.docs[0].id;
-                console.log('[Auth Register] Inviter found by phone in Firebase:', referredBy);
-              }
-            }
           }
         }
 
         // 5. Geração de código de indicação individual único
         let generatedReferralCode = `ZONA${cleanDigits}`;
         let isUnique = !db.getUserByReferralCode(generatedReferralCode);
-        if (isUnique && firebaseService.isAvailable()) {
-            const dbFirestore = firebaseService.getDb()!;
-            const codeCheck = await dbFirestore.collection('users').where('referralCode', '==', generatedReferralCode).limit(1).get();
-            if (!codeCheck.empty) isUnique = false;
-        }
         
         if (!isUnique) {
           generatedReferralCode = `${generatedReferralCode}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
@@ -202,30 +166,6 @@ export class AuthController {
 
         // 6. Gravação primária
         console.log('[Auth Register] Gravando perfil...', { id: newUser.id, phone: newUser.phone });
-        
-        // Sincronizar com Firebase se possível
-        if (firebaseService.isAvailable()) {
-          try {
-            await firebaseService.syncUser(newUser);
-            const firebaseAuth = firebaseService.getAuth();
-            if (firebaseAuth) {
-              try {
-                await firebaseAuth.createUser({
-                  uid: newUser.id,
-                  phoneNumber: newUser.phone,
-                  displayName: newUser.name,
-                  email: newUser.email,
-                  password: password,
-                });
-              } catch (authErr: any) {
-                console.warn('[Auth Register] Aviso ao criar no Firebase Auth:', authErr.message);
-              }
-            }
-          } catch (insertError: any) {
-            console.error('[Auth Register] Erro Firebase Firestore sync:', insertError);
-          }
-        }
-
         console.log('[Auth Register] Perfil gravado com sucesso.');
 
         // 9. Confirmar na memória local
@@ -233,27 +173,7 @@ export class AuthController {
 
         // Relacionamento de convite
         if (referredBy) {
-          let inviter = db.users.get(referredBy);
-          if (!inviter && firebaseService.isAvailable()) {
-            const dbFirestore = firebaseService.getDb()!;
-            const usersRef = dbFirestore.collection('users');
-            const inviterDoc = await usersRef.doc(referredBy).get();
-            if (inviterDoc.exists) {
-              const d = inviterDoc.data()!;
-              inviter = {
-                id: d.id,
-                name: d.name,
-                phone: d.phone,
-                email: d.email,
-                passwordHash: d.passwordHash || '',
-                role: d.role,
-                isBlocked: d.status === 'BLOCKED',
-                referralCode: d.referralCode,
-                createdAt: d.createdAt,
-                updatedAt: d.updatedAt
-              };
-            }
-          }
+          const inviter = db.users.get(referredBy);
 
           if (inviter) {
             db.addReferral({
@@ -327,18 +247,7 @@ export class AuthController {
     const identifier = parseResult.data.identifier || parseResult.data.email || parseResult.data.phone || '';
     const { password } = parseResult.data;
     
-    let user = db.getUserByIdentifier(identifier);
-
-    // Fallback to Firebase if not in memory
-    if (!user && firebaseService.isAvailable()) {
-      console.log(`[Auth] Utilizador ${identifier} não encontrado em memória. A procurar no Firebase...`);
-      const fbUser = await firebaseService.getUserByIdentifier(identifier);
-      if (fbUser) {
-        user = fbUser;
-        db.users.set(user.id, user);
-        await WalletService.getWallet(user.id);
-      }
-    }
+    const user = db.getUserByIdentifier(identifier);
 
     if (!user) {
       res.status(401).json({ error: 'Credenciais inválidas. Número de celular ou palavra-passe incorretos.' });
@@ -408,18 +317,7 @@ export class AuthController {
       return;
     }
 
-    let user = db.users.get(req.user.userId);
-    
-    // Resiliency: If user not in memory (server restart), pull from Firebase
-    if (!user && firebaseService.isAvailable()) {
-      console.log(`[Auth] Utilizador ${req.user.userId} não encontrado em memória. A tentar recuperar do Firebase...`);
-      const fbUser = await firebaseService.getUserByIdentifier(req.user.userId);
-      if (fbUser) {
-        user = fbUser;
-        db.users.set(user.id, user);
-        await WalletService.getWallet(user.id);
-      }
-    }
+    const user = db.users.get(req.user.userId);
 
     if (!user) {
       res.status(404).json({ error: 'Utilizador não encontrado' });

@@ -108,7 +108,7 @@ export const UserAccountModal: React.FC<UserAccountModalProps> = ({ defaultTab =
   // Listener em tempo real para atualização automática de apostas e estados (WON, LOST, PENDING, VOID)
   useEffect(() => {
     const unsubscribe = onBetChange((updatedBet, eventType) => {
-      console.log('[UserAccountModal Realtime] Aposta atualizada via Supabase:', updatedBet.id, updatedBet.status);
+      console.log('[UserAccountModal Realtime] Aposta atualizada:', updatedBet.id, updatedBet.status);
 
       // Se a aposta pertencer a este utilizador
       if (user && updatedBet.userId === user.id) {

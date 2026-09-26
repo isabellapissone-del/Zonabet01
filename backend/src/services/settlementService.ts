@@ -1,11 +1,9 @@
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import type { Match, Bet } from '../types/index.ts';
 import { WalletService } from './walletService.ts';
 import { AuditService } from './auditService.ts';
 import { Money } from '../utils/money.ts';
-import { firebaseService } from '../db/firebase.ts';
 import { MatchService } from './matchService.ts';
-import { BetService } from './betService.ts';
 
 export class SettlementService {
   /**
@@ -66,10 +64,6 @@ export class SettlementService {
       }
     }
 
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
-
     let settledBetsCount = 0;
     let wonBetsCount = 0;
     let totalPayout = 0;
@@ -121,10 +115,6 @@ export class SettlementService {
           description: `Prémio de Aposta Vencedora #${bet.id.substring(0, 10)} (Odd ${finalOdds})`,
         });
       }
-
-      if (firebaseService.isAvailable() && bet.status !== 'PENDING') {
-        await firebaseService.syncBet(bet);
-      }
     }
 
     AuditService.log(adminId, adminEmail, 'SETTLE_MATCH', 'Match', matchId, { status: previousStatus }, {
@@ -160,10 +150,6 @@ export class SettlementService {
     for (const market of match.markets!) {
       market.status = 'CLOSED';
       for (const sel of market.selections) sel.status = 'VOID';
-    }
-
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
     }
 
     let refundedBetsCount = 0;
@@ -202,10 +188,6 @@ export class SettlementService {
           refundedBetsCount++;
           totalRefunded = Money.add(totalRefunded, bet.stake);
         }
-      }
-
-      if (firebaseService.isAvailable() && bet.status !== 'PENDING') {
-        await firebaseService.syncBet(bet);
       }
     }
 

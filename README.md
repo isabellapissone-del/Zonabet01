@@ -1,6 +1,8 @@
 # ZONABET — Plataforma de Apostas Desportivas (Moçambola & Futebol Internacional)
 
-Plataforma completa de apostas desportivas focada em futebol (Moçambola, Ligas Provinciais e Competições Internacionais), concebida com arquitetura full-stack (React + Express + Supabase/PostgreSQL), segurança financeira em Meticais (MZN), controlo de concorrência atómico e painel administrativo para gestão manual de jogos, odds e liquidações.
+Plataforma completa de apostas desportivas focada em futebol (Moçambola, Ligas Provinciais e Competições Internacionais), concebida com arquitetura full-stack (React + Express), segurança financeira em Meticais (MZN), controlo de concorrência atómico e painel administrativo para gestão manual de jogos, odds e liquidações.
+
+Esta aplicação opera em **modo de demonstração 100% em memória**, sem necessidade de base de dados externa, garantindo portabilidade total e execução imediata em qualquer ambiente Node.js.
 
 ---
 
@@ -40,7 +42,7 @@ Plataforma completa de apostas desportivas focada em futebol (Moçambola, Ligas 
 
 - **Node.js:** Versão 18, 20 ou 22 LTS
 - **Gerenciador de Pacotes:** `npm` (compatível com lockfile v3 padrão)
-- **Base de Dados:** Supabase (PostgreSQL na nuvem) ou PostgreSQL local
+- **Base de Dados:** Nenhuma (Armazenamento em memória volátil para demonstração)
 
 ---
 
@@ -64,15 +66,7 @@ Edite o `.env` com seus valores:
 PORT=3000
 NODE_ENV=production
 JWT_SECRET=gere_uma_chave_longa_e_aleatoria_aqui
-SUPABASE_URL=https://seu-projeto.supabase.co
-SUPABASE_ANON_KEY=sua_chave_anon_aqui
 ```
-
-### 3. Banco de Dados (Supabase):
-O script SQL completo para criação das tabelas e índices no Supabase está disponível em:
-`supabase/schema.sql`
-
-Execute o conteúdo de `supabase/schema.sql` no **SQL Editor** do seu painel Supabase.
 
 ---
 
@@ -136,7 +130,7 @@ docker compose up --build -d
 ### Entendendo a Arquitetura no Cloudflare
 O ZONABET é um aplicativo **full-stack** composto por:
 1. **Frontend:** Single Page Application (SPA) React com Vite.
-2. **Backend:** Servidor Node.js Express com controle de concorrência em memória (`async-mutex`), rotas REST `/api/*` e integração com banco.
+2. **Backend:** Servidor Node.js Express com controle de concorrência em memória (`async-mutex`) e rotas REST `/api/*`.
 
 ### Limitações do Cloudflare Pages (Serverless Edge)
 - O **Cloudflare Pages** padrão hospeda arquivos estáticos e executa funções em V8 Edge Isolates (não é um processo contínuo Node.js com `server.listen`).
@@ -148,7 +142,7 @@ O ZONABET é um aplicativo **full-stack** composto por:
 1. **Frontend no Cloudflare Pages:**
    - **Build command:** `npm run build:client`
    - **Build output directory:** `dist`
-   - **Environment variable no Cloudflare:** Defina `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+   - **Environment variable no Cloudflare:** Defina `JWT_SECRET`.
 2. **Backend Node.js em Hospedagem Contínua:**
    - Faça deploy do backend Express no **Render**, **Railway**, **Fly.io** ou **VPS**.
    - Configure o domínio do backend no frontend.

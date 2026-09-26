@@ -1,83 +1,12 @@
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import type { Match, Market, Selection } from '../types/index.ts';
 import { AuditService } from './auditService.ts';
-import { firebaseService } from '../db/firebase.ts';
 
 export class MatchService {
   /**
-   * Retrieves all matches with their markets and selections from Firebase
+   * Retrieves all matches with their markets and selections from in-memory store
    */
   static async getAllMatches(filters?: { status?: string; competitionId?: string; category?: string }): Promise<Match[]> {
-    try {
-      if (firebaseService.isAvailable()) {
-        const dbFirestore = firebaseService.getDb()!;
-        let query: any = dbFirestore.collection('matches');
-        
-        if (filters?.status) {
-          query = query.where('status', '==', filters.status);
-        }
-        if (filters?.competitionId) {
-          query = query.where('competitionId', '==', filters.competitionId);
-        }
-
-        const snap = await query.get();
-        
-        if (!snap.empty) {
-          const matches: Match[] = [];
-          for (const doc of snap.docs) {
-            const data = doc.data();
-            const match: Match = {
-              id: data.id,
-              competitionId: data.competitionId,
-              competitionName: data.competitionName,
-              competitionCategory: data.competitionCategory,
-              homeTeam: data.homeTeam,
-              awayTeam: data.awayTeam,
-              kickoffDate: data.startTime.split('T')[0],
-              kickoffTime: data.startTime.split('T')[1].substring(0, 5),
-              status: data.status,
-              homeScore: data.homeScore,
-              awayScore: data.awayScore,
-              isFeatured: data.isFeatured,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt,
-              markets: []
-            };
-
-            // Fetch markets from subcollection
-            const marketsSnap = await doc.ref.collection('markets').get();
-            for (const mkDoc of marketsSnap.docs) {
-              const mkData = mkDoc.data();
-              const market: Market = {
-                id: mkData.id,
-                name: mkData.name,
-                type: mkData.type,
-                status: mkData.status,
-                maxExposure: mkData.maxExposure,
-                maxStake: mkData.maxStake,
-                selections: []
-              };
-
-              const selectionsSnap = await mkDoc.ref.collection('selections').get();
-              selectionsSnap.forEach(sDoc => {
-                market.selections.push(sDoc.data() as Selection);
-              });
-              match.markets!.push(market);
-            }
-            matches.push(match);
-          }
-
-          if (filters?.category && filters.category !== 'ALL') {
-            return matches.filter((m: Match) => m.competitionCategory === filters.category);
-          }
-          return matches;
-        }
-      }
-    } catch (fireErr) {
-      console.warn('[MatchService] Erro ou timeout na consulta Firebase, a utilizar dados locais:', fireErr);
-    }
-
-    // Fallback seguro aos dados em memória
     let localMatches = Array.from(db.matches.values()).map(m => {
       const comp = db.competitions.find(c => c.id === m.competitionId);
       const compCategory = (m.competitionCategory && m.competitionCategory !== 'Futebol')
@@ -99,56 +28,11 @@ export class MatchService {
   }
 
   static async getMatchById(id: string): Promise<Match | null> {
-    try {
-      if (firebaseService.isAvailable()) {
-        const dbFirestore = firebaseService.getDb()!;
-        const doc = await dbFirestore.collection('matches').doc(id).get();
-        
-        if (doc.exists) {
-          const data = doc.data()!;
-          const match: Match = {
-            id: data.id,
-            competitionId: data.competitionId,
-            competitionName: data.competitionName,
-            competitionCategory: data.competitionCategory,
-            homeTeam: data.homeTeam,
-            awayTeam: data.awayTeam,
-            kickoffDate: data.startTime.split('T')[0],
-            kickoffTime: data.startTime.split('T')[1].substring(0, 5),
-            status: data.status,
-            homeScore: data.homeScore,
-            awayScore: data.awayScore,
-            isFeatured: data.isFeatured,
-            createdAt: data.createdAt,
-            updatedAt: data.updatedAt,
-            markets: []
-          };
-
-          const marketsSnap = await doc.ref.collection('markets').get();
-          for (const mkDoc of marketsSnap.docs) {
-            const mkData = mkDoc.data();
-            const market: Market = {
-              id: mkData.id,
-              name: mkData.name,
-              type: mkData.type,
-              status: mkData.status,
-              selections: []
-            };
-            const selectionsSnap = await mkDoc.ref.collection('selections').get();
-            selectionsSnap.forEach(sDoc => market.selections.push(sDoc.data() as Selection));
-            match.markets!.push(market);
-          }
-          return match;
-        }
-      }
-    } catch (fireErr) {
-      console.warn('[MatchService] Erro ao buscar jogo por id no Firebase:', fireErr);
-    }
     return db.matches.get(id) || null;
   }
 
   /**
-   * Creates a new match and its default markets in Firebase
+   * Creates a new match and its default markets
    */
   static async createMatch(params: {
     adminId: string;
@@ -216,11 +100,6 @@ export class MatchService {
     };
     match.markets.push(correctScoreMarket);
 
-    // Persist to Firebase
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
-
     db.matches.set(match.id, match);
     AuditService.log(params.adminId, params.adminEmail, 'CREATE_MATCH', 'Match', match.id, null, match, params.ip);
 
@@ -257,11 +136,6 @@ export class MatchService {
       }
     }
 
-    // Update in Firebase
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
-
     db.matches.set(match.id, match);
     AuditService.log(params.adminId, params.adminEmail, 'UPDATE_ODDS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
@@ -282,10 +156,6 @@ export class MatchService {
     match.status = params.status;
     match.updatedAt = new Date().toISOString();
 
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
-
     db.matches.set(match.id, match);
     AuditService.log(params.adminId, params.adminEmail, 'UPDATE_STATUS', 'Match', match.id, oldMatch, match, params.ip);
     return match;
@@ -300,10 +170,6 @@ export class MatchService {
 
     market.status = params.status;
     
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
-
     db.matches.set(match.id, match);
     return market;
   }
@@ -318,10 +184,6 @@ export class MatchService {
     for (const selUpdate of params.selections) {
       const sel = market.selections.find((s) => s.id === selUpdate.id);
       if (sel) sel.odds = selUpdate.odds;
-    }
-
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
     }
 
     db.matches.set(match.id, match);
@@ -345,10 +207,6 @@ export class MatchService {
     };
 
     market.selections.push(newSelection);
-
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
 
     db.matches.set(match.id, match);
     return market;
@@ -447,10 +305,6 @@ export class MatchService {
       draw: dOdd,
       away: aOdd
     });
-
-    if (firebaseService.isAvailable()) {
-      await firebaseService.syncMatch(match);
-    }
 
     db.matches.set(match.id, match);
     return true;

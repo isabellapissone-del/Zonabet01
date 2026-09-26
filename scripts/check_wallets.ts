@@ -1,4 +1,4 @@
-import { db } from '../backend/src/db/store.ts';
+import { db } from '../backend/src/store/store.ts';
 
 console.log('--- Wallet Status Check ---');
 const wallets = Array.from(db.wallets.values());

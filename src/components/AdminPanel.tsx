@@ -163,85 +163,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
   const [matchStatusFilter, setMatchStatusFilter] = useState<'ALL' | 'OPEN' | 'SUSPENDED' | 'FINISHED' | 'CANCELLED'>('ALL');
   const [matchCategoryFilter, setMatchCategoryFilter] = useState<'ALL' | 'MOCAMBOLA' | 'PROVINCIAL' | 'DISTRITAL'>('ALL');
 
-  // Supabase states
-  const [supabaseStatus, setSupabaseStatus] = useState<{
-    isConfigured: boolean;
-    connected: boolean;
-    url: string | null;
-    hasServiceKey: boolean;
-    hasAnonKey: boolean;
-    error?: string | null;
-    tables?: any;
-  } | null>(null);
-  const [supabaseSchemaSql, setSupabaseSchemaSql] = useState<string>('');
-  const [syncingSupabase, setSyncingSupabase] = useState(false);
-  const [pullingSupabase, setPullingSupabase] = useState(false);
-  const [copiedSql, setCopiedSql] = useState(false);
-
-  const fetchSupabaseInfo = async () => {
-    try {
-      const [statusRes, schemaRes] = await Promise.all([
-        api.getSupabaseStatus(),
-        api.getSupabaseSchema().catch(() => ({ sql: '' })),
-      ]);
-      setSupabaseStatus(statusRes);
-      if (schemaRes?.sql) {
-        setSupabaseSchemaSql(schemaRes.sql);
-      }
-    } catch (e: any) {
-      console.warn('Erro ao obter info do Supabase:', e);
-    }
-  };
-
-  const handleSyncToSupabase = async () => {
-    setSyncingSupabase(true);
-    setActionSuccess(null);
-    setActionError(null);
-    try {
-      const res = await api.syncSupabase();
-      if (res.success) {
-        notifySuccess(res.message);
-        await fetchSupabaseInfo();
-      } else {
-        notifyError(res.message);
-      }
-    } catch (err: any) {
-      notifyError(err.message || 'Falha ao sincronizar dados com o Supabase');
-    } finally {
-      setSyncingSupabase(false);
-    }
-  };
-
-  const handlePullFromSupabase = async () => {
-    setPullingSupabase(true);
-    setActionSuccess(null);
-    setActionError(null);
-    try {
-      const res = await api.pullSupabase();
-      if (res.success) {
-        notifySuccess(res.message);
-        await loadData();
-      } else {
-        notifyError(res.message);
-      }
-    } catch (err: any) {
-      notifyError(err.message || 'Falha ao puxar dados do Supabase');
-    } finally {
-      setPullingSupabase(false);
-    }
-  };
-
-  const handleCopySql = async () => {
-    const success = await copyToClipboard(supabaseSchemaSql);
-    if (success) {
-      setCopiedSql(true);
-      notifySuccess('Script SQL copiado com sucesso! Cole-o no SQL Editor do seu projeto Supabase.');
-      setTimeout(() => setCopiedSql(false), 4000);
-    } else {
-      notifyError('Não foi possível copiar para a área de transferência');
-    }
-  };
-
   const loadSettingsData = async () => {
     setLoadingSettings(true);
     try {
@@ -329,7 +250,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
         api.getAdminBets(),
         api.getAdminTransactions(),
         api.getAdminDepositProofs(),
-        fetchSupabaseInfo(),
         loadSettingsData(),
         loadRiskData(),
       ]);
@@ -881,16 +801,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToSportsbook }) =>
             onUpdateSettings={handleUpdateSettings}
             loadingSettings={loadingSettings}
             auditLogs={auditLogs}
-            supabaseStatus={supabaseStatus}
-            supabaseSchemaSql={supabaseSchemaSql}
-            syncingSupabase={syncingSupabase}
-            pullingSupabase={pullingSupabase}
-            copiedSql={copiedSql}
-            handleSyncToSupabase={handleSyncToSupabase}
-            handlePullFromSupabase={handlePullFromSupabase}
-            handleCopySql={handleCopySql}
             onResetAllBalances={handleResetAllBalances}
-            onRefreshSupabaseStatus={fetchSupabaseInfo}
           />
         )}
       </div>

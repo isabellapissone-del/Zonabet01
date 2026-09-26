@@ -1,11 +1,9 @@
 import type { Response } from 'express';
 import type { AuthenticatedRequest } from '../middleware/auth.ts';
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import { WalletService } from '../services/walletService.ts';
 import { ReferralService } from '../services/referralService.ts';
 import { config } from '../config/index.ts';
-import { supabaseService } from '../db/supabase.ts';
-
 import { settingsService } from '../services/settingsService.ts';
 
 export class WalletController {
@@ -32,47 +30,11 @@ export class WalletController {
       return;
     }
 
-    const client = supabaseService.getClient();
-    if (client) {
-      let { data, error } = await client
-        .from('transactions')
-        .select('*')
-        .eq('user_id', req.user.userId)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        const alt = await client
-          .from('wallet_transactions')
-          .select('*')
-          .eq('user_id', req.user.userId)
-          .order('created_at', { ascending: false });
-        data = alt.data;
-        error = alt.error;
-      }
-      
-      if (!error && data) {
-        const transactions = data.map(tx => ({
-          id: tx.id,
-          userId: tx.user_id,
-          type: tx.type === 'BET_PLACEMENT' ? 'BET' : tx.type === 'BET_WIN' ? 'WIN' : tx.type,
-          amount: Number(tx.amount),
-          previousBalance: Number(tx.prev_balance ?? tx.balance_before ?? 0),
-          nextBalance: Number(tx.next_balance ?? tx.balance_after ?? 0),
-          reference: tx.reference_id ?? tx.reference ?? '',
-          description: tx.description ?? tx.notes ?? '',
-          status: 'COMPLETED',
-          createdAt: tx.created_at,
-        }));
-        res.status(200).json({ transactions });
-        return;
-      }
-    }
-
     const transactions = db.getTransactions(req.user.userId);
     res.status(200).json({ transactions });
   }
 
-  // Process deposit request (M-Pesa, e-Mola, mKesh, Bank Transfer)
+  // Process deposit request (e-Mola)
   static async deposit(req: AuthenticatedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Não autenticado' });
@@ -135,9 +97,6 @@ export class WalletController {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
-
-      // Real-time synchronization with Supabase
-      supabaseService.syncDepositProofRealtime(depositProof).catch(console.error);
 
       res.status(200).json({
         message: `Pedido de depósito de ${amount.toFixed(2)} MZN via ${methodLabel} submetido! Aguarde a validação administrativa.`,
@@ -225,7 +184,7 @@ export class WalletController {
     }
   }
 
-  // Prepared endpoint for sandbox/virtual deposit (simulating M-Pesa / e-Mola top-up in test mode)
+  // Prepared endpoint for sandbox/virtual deposit (simulating e-Mola top-up in test mode)
   static async requestVirtualTopup(req: AuthenticatedRequest, res: Response): Promise<void> {
     if (!req.user) {
       res.status(401).json({ error: 'Não autenticado' });
@@ -233,7 +192,7 @@ export class WalletController {
     }
 
     const amount = Number(req.body.amount || 500);
-    const method = req.body.method || 'M-Pesa (Virtual Test)';
+    const method = req.body.method || 'e-Mola (Virtual Test)';
 
     if (amount <= 0 || amount > 10000) {
       res.status(400).json({ error: 'Montante de recarga de teste deve ser entre 10 e 10.000 MZN' });
@@ -268,36 +227,6 @@ export class WalletController {
     if (!req.user) {
       res.status(401).json({ error: 'Não autenticado' });
       return;
-    }
-    const client = supabaseService.getClient();
-    if (client) {
-      const { data, error } = await client
-        .from('deposit_proofs')
-        .select('*')
-        .eq('user_id', req.user.userId)
-        .order('created_at', { ascending: false });
-      
-      if (!error && data) {
-        const proofs = data.map(p => ({
-          id: p.id,
-          userId: p.user_id,
-          userName: p.user_name,
-          userPhone: p.user_phone,
-          amount: Number(p.amount),
-          method: p.method,
-          referenceCode: p.reference_code,
-          operatorTxId: p.operator_tx_id,
-          receiptDataUrl: p.receipt_data_url,
-          receiptFileName: p.receipt_file_name,
-          notes: p.notes,
-          status: p.status,
-          reviewNotes: p.review_notes,
-          createdAt: p.created_at,
-          updatedAt: p.reviewed_at || p.created_at,
-        }));
-        res.status(200).json({ proofs });
-        return;
-      }
     }
     const proofs = db.getDepositProofs(req.user.userId);
     res.status(200).json({ proofs });

@@ -1,36 +1,14 @@
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import type { Wallet, WalletTransaction, TransactionType } from '../types/index.ts';
-import { firebaseService } from '../db/firebase.ts';
 import { Mutex } from 'async-mutex';
 
 const walletMutex = new Mutex();
 
 export class WalletService {
   /**
-   * Retrieves user wallet from Firebase profile
+   * Retrieves user wallet from in-memory store
    */
   static async getWallet(userId: string): Promise<Wallet> {
-    if (firebaseService.isAvailable()) {
-      try {
-        const dbFirestore = firebaseService.getDb()!;
-        const doc = await dbFirestore.collection('users').doc(userId).get();
-        
-        if (doc.exists) {
-          const data = doc.data()!;
-          return {
-            id: userId,
-            userId: userId,
-            balance: Number(data.balance || 0),
-            lockedBalance: 0,
-            updatedAt: data.updatedAt || new Date().toISOString(),
-          };
-        }
-      } catch (err: any) {
-        console.warn(`[WalletService] Aviso ao obter carteira do Firestore para ${userId}:`, err?.message || err);
-      }
-    }
-
-    // Fallback to in-memory for testing if Firebase is down or not configured
     let wallet = db.wallets.get(userId);
     if (!wallet) {
       wallet = {
@@ -106,17 +84,7 @@ export class WalletService {
       wallet.balance = nextBalance;
       wallet.updatedAt = new Date().toISOString();
 
-      // Persist to Firebase if available
-      if (firebaseService.isAvailable()) {
-        try {
-          await firebaseService.syncWallet(wallet);
-          await firebaseService.syncTransaction(transaction);
-        } catch (err: any) {
-          console.error('[Firebase Transaction Error]:', err.message);
-        }
-      }
-
-      // Keep in-memory store in sync as a secondary local cache
+      // Keep in-memory store in sync
       db.wallets.set(userId, wallet);
       db.transactions.push(transaction);
 
@@ -125,55 +93,15 @@ export class WalletService {
   }
 
   /**
-   * Resets all user balances to zero in Firebase and in-memory store.
+   * Resets all user balances to zero in in-memory store.
    */
   static async resetAllBalances(adminId: string, adminEmail: string): Promise<{ affectedRows: number }> {
     let affectedRows = 0;
 
-    if (firebaseService.isAvailable()) {
-      const dbFirestore = firebaseService.getDb()!;
-      try {
-        const usersSnap = await dbFirestore.collection('users').where('balance', '>', 0).get();
-        affectedRows = usersSnap.size;
-
-        if (!usersSnap.empty) {
-          const batch = dbFirestore.batch();
-          const timestamp = new Date().toISOString();
-
-          usersSnap.forEach(doc => {
-            const userId = doc.id;
-            const prevBalance = doc.data().balance;
-            
-            // Update user balance
-            batch.update(doc.ref, { balance: 0, updatedAt: timestamp });
-
-            // Create transaction record
-            const txRef = dbFirestore.collection('transactions').doc(`tx-reset-${userId}-${Date.now()}`);
-            batch.set(txRef, {
-              id: txRef.id,
-              userId: userId,
-              type: 'ADJUSTMENT',
-              amount: -prevBalance,
-              prevBalance: prevBalance,
-              nextBalance: 0,
-              description: 'Limpeza de Saldo Virtual / Reset Administrativo',
-              referenceId: `RESET-${Date.now()}`,
-              adminId: adminId,
-              createdAt: timestamp
-            });
-          });
-
-          await batch.commit();
-        }
-      } catch (err: any) {
-        console.error('[ResetBalances] Firebase error:', err.message);
-        throw new Error(`Erro ao resetar saldos no Firebase: ${err.message}`);
-      }
-    }
-
-    // Always clear in-memory store
+    // Clear in-memory store
     for (const [userId, wallet] of db.wallets.entries()) {
       if (wallet.balance > 0) {
+        affectedRows++;
         wallet.balance = 0;
         wallet.updatedAt = new Date().toISOString();
         db.wallets.set(userId, wallet);

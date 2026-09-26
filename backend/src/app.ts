@@ -6,11 +6,9 @@ import matchRoutes from './routes/matchRoutes.ts';
 import betRoutes from './routes/betRoutes.ts';
 import walletRoutes from './routes/walletRoutes.ts';
 import adminRoutes from './routes/adminRoutes.ts';
-import supabaseRoutes from './routes/supabaseRoutes.ts';
 import { rateLimiter } from './middleware/auth.ts';
 import { settingsService } from './services/settingsService.ts';
-import { firebaseService } from './db/firebase.ts';
-import { db } from './db/store.ts';
+import { db } from './store/store.ts';
 
 export function createExpressApp() {
   const app = express();
@@ -47,31 +45,14 @@ export function createExpressApp() {
   const healthHandler = async (_req: Request, res: Response) => {
     const health: any = {
       status: 'ok',
-      firebase_enabled: firebaseService.enabled,
       users_in_memory: db.users.size,
+      timestamp: new Date().toISOString(),
       env: {
-        has_creds_env: !!process.env.GOOGLE_APPLICATION_CREDENTIALS,
-        has_creds_b64: !!(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64 || process.env.FIREBASE_SERVICE_ACCOUNT),
         node_env: process.env.NODE_ENV,
       },
     };
 
-    if (firebaseService.enabled && firebaseService.db) {
-      try {
-        await firebaseService.db.collection('users').limit(1).get();
-        health.firestore = 'reachable';
-      } catch (err: any) {
-        health.firestore = 'unreachable';
-        health.firestore_code = err.code;
-        health.firestore_message = err.message;
-        health.status = 'degraded';
-      }
-    } else {
-      health.firestore = 'disabled';
-      health.status = 'degraded';
-    }
-
-    res.status(health.status === 'ok' ? 200 : 503).json(health);
+    res.status(200).json(health);
   };
 
   // Public settings handler
@@ -88,7 +69,6 @@ export function createExpressApp() {
     app.use(`${prefix}/bets`, betRoutes);
     app.use(`${prefix}/wallet`, walletRoutes);
     app.use(`${prefix}/admin`, adminRoutes);
-    app.use(`${prefix}/supabase`, supabaseRoutes);
   };
 
   registerApiRoutes('/api');

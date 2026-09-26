@@ -1,9 +1,8 @@
 import type { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '../config/index.ts';
-import { db } from '../db/store.ts';
+import { db } from '../store/store.ts';
 import type { AuthTokenPayload } from '../types/index.ts';
-import { firebaseService } from '../db/firebase.ts';
 
 export interface AuthenticatedRequest extends Request {
   user?: AuthTokenPayload;
@@ -41,16 +40,7 @@ export async function authenticate(req: AuthenticatedRequest, res: Response, nex
       throw new Error('Token inválido ou expirado');
     }
 
-    let user = db.users.get(payload.userId);
-
-    // Resiliency: Fallback to Firebase if not in memory (common in serverless/Vercel)
-    if (!user && firebaseService.isAvailable()) {
-      const fbUser = await firebaseService.getUserByIdentifier(payload.userId);
-      if (fbUser) {
-        user = fbUser;
-        db.users.set(user.id, user);
-      }
-    }
+    const user = db.users.get(payload.userId);
 
     if (!user) {
       console.warn(`[Auth] Utilizador ${payload.userId} não encontrado para o token fornecido.`);

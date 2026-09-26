@@ -62,7 +62,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
       }
     }
 
-    // Se houver detalhes ou hint (comum em erros Supabase repassados), adicionar à mensagem se em desenvolvimento
+    // Se houver detalhes ou hint, adicionar à mensagem se em desenvolvimento
     if (data.details || data.hint || data.code) {
       console.error('[API Diagnostic Info]:', {
         status: response.status,
@@ -230,26 +230,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ status, reviewNotes }),
     }),
-  getSupabaseStatus: () =>
-    request<{
-      isConfigured: boolean;
-      connected: boolean;
-      url: string | null;
-      hasServiceKey: boolean;
-      hasAnonKey: boolean;
-      error?: string | null;
-      tables?: any;
-    }>('/supabase/status'),
-  syncSupabase: () =>
-    request<{ success: boolean; message: string; details?: any }>('/supabase/sync', {
-      method: 'POST',
-    }),
-  pullSupabase: () =>
-    request<{ success: boolean; message: string; details?: any }>('/supabase/pull', {
-      method: 'POST',
-    }),
-  getSupabaseSchema: () =>
-    request<{ sql: string }>('/supabase/schema'),
 
   // Public Settings
   getPublicSettings: () => request<{ settings: any }>('/settings/public'),

@@ -1,5 +1,5 @@
 import { WalletService } from '../backend/src/services/walletService.ts';
-import { db } from '../backend/src/db/store.ts';
+import { db } from '../backend/src/store/store.ts';
 
 async function runCleanup() {
   console.log('--- Iniciando Limpeza de Dinheiro Virtual ---');
